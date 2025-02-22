@@ -39,10 +39,11 @@ class VideoDataset(data.Dataset):
         self.infor_folder= infor_folder
         self.feature_prefix = f"{self.prefix}\\features\\fullFrame-256x256px\\{self.mode}"
         # load the pickle file
-        self.inputs_list= pickle.load(open(f'Information_dict\\{self.mode}_info.pkl', 'rb'))
         #using for Kaggle notebook
         if self.infor_folder:
             self.inputs_list = pickle.load(open(f'{self.infor_folder}/{self.mode}_info.pkl', 'rb'))
+        else :
+            self.inputs_list= pickle.load(open(f'Information_dict\\{self.mode}_info.pkl', 'rb'))
         self.data_aug = self.transform()
         
     def __getitem__(self, index):
@@ -57,11 +58,15 @@ class VideoDataset(data.Dataset):
     def read_video(self, index):
         # load file info
         file_info = self.inputs_list[index]
-        img_folder = self.prefix + f'\\features\\fullFrame-256x256px\\{self.mode}\\' + file_info['fileid']
         if self.feature_folder:
             img_folder = self.feature_folder + f'/{self.mode}/' + file_info['fileid']
+        else :
+            img_folder = self.prefix + f'\\features\\fullFrame-256x256px\\{self.mode}\\' + file_info['fileid']
         # print(img_folder)
-        img_list = sorted(glob.glob(img_folder + '\\*.jpg'))
+        if self.feature_folder:
+            img_list = sorted(glob.glob(img_folder + '/*.jpg'))
+        else:
+            img_list = sorted(glob.glob(img_folder + '\\*.jpg'))
         # print(f'img_list: {img_list}')
         img_list = img_list[int(torch.randint(0, self.frame_interval, [1]))::self.frame_interval]
         label_list = []

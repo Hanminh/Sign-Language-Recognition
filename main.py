@@ -30,7 +30,7 @@ prefix = os.getenv("DATA_PATH")
 gloss_dict = np.load('Information_dict\\gloss_dict.npy', allow_pickle= True)
 gloss_dict = gloss_dict.item()
 id2gloss = []
-id2gloss.append(' ')
+id2gloss.append('<blank>')
 for i in list(gloss_dict.keys()):
     id2gloss.append(gloss_dict[i])
 # print(len(gloss_dict))
@@ -70,7 +70,7 @@ for epoch in range(epochs):
         target_lengths = sample[3]
 
         loss = criterion(
-            output["sequence_logits"],  # Shape (T, N, C)
+            output["sequence_logits"].log_softmax(-1),  # Shape (T, N, C)
             sample[2],  # sequence
             input_lengths,  #  (batch_size,)
             target_lengths,  # (batch_size,)
