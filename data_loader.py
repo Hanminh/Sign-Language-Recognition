@@ -42,12 +42,12 @@ class VideoDataset(data.Dataset):
         
     def __getitem__(self, index):
         if self.data_type == 'video':
-            input_data, label, file_info = self.read_video(index)
+            input_data, label, file_info, vid_len = self.read_video(index)
             input_data, label = self.normalize(input_data, label, file_info)
-            return input_data, torch.LongTensor(label), self.inputs_list[index]['label']
+            return input_data, torch.LongTensor(label), self.inputs_list[index]['label'], vid_len
         elif self.data_type == 'feature':
             input_data, label = self.read_feature(index)
-            return input_data, label, self.inputs_list[index]['label']
+            return input_data, label, self.inputs_list[index]['label'], vid_len
     
     def read_video(self, index):
         # load file info
@@ -67,7 +67,7 @@ class VideoDataset(data.Dataset):
         data = [cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB) for img_path in img_list] 
         # convert data to numpy array
         data = np.array(data)
-        return data, label_list, file_info
+        return data, label_list, file_info, len(img_list)
     
     def read_feature(self, index):
         # load file info
@@ -103,7 +103,7 @@ class VideoDataset(data.Dataset):
     @staticmethod
     def collate_fn(batch):
         batch = [item for item in sorted(batch, key=lambda x: len(x[0]), reverse=True)]
-        video, label, info = list(zip(*batch))
+        video, label, info, vid_len = list(zip(*batch))
         
         left_pad = 0
         last_stride = 1

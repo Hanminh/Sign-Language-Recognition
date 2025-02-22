@@ -60,11 +60,12 @@ for epoch in range(epochs):
     running_loss = 0.0
     for i, sample in enumerate(dataloader):
         input = sample[0]
+        vid_len = sample[1]
         input = input.to('cuda')
         encode_seq = encode_text(sample)
         
         # Forward pass
-        output = model(input)
+        output = model(input, vid_len)
         input_lengths = torch.tensor([output["sequence_logits"].shape[0]], dtype=torch.long)
         target_lengths = torch.tensor([encode_seq.shape[0]], dtype=torch.long)
 
