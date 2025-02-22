@@ -62,16 +62,16 @@ for epoch in range(epochs):
         input = sample[0]
         vid_len = sample[1]
         input = input.to('cuda')
-        encode_seq = encode_text(sample)
+        # encode_seq = encode_text(sample)
         
         # Forward pass
         output = model(input, vid_len)
-        input_lengths = torch.tensor([output["sequence_logits"].shape[0]], dtype=torch.long)
-        target_lengths = torch.tensor([encode_seq.shape[0]], dtype=torch.long)
+        input_lengths = torch.tensor([output["sequence_logits"].shape[0] for i in range(output['sequence_logits'].shape[1])], dtype=torch.long)
+        target_lengths = sample[3]
 
         loss = criterion(
             output["sequence_logits"],  # Shape (T, N, C)
-            encode_seq,  # sequence
+            sample[2],  # sequence
             input_lengths,  #  (batch_size,)
             target_lengths,  # (batch_size,)
         )

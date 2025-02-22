@@ -35,7 +35,7 @@ class BiLSTM(nn.Module):
         # print(f"src_lens: {src_lens}")
         
         packed_emb = nn.utils.rnn.pack_padded_sequence(
-            src_feats, src_lens
+            src_feats, src_lens[0]
         )
         # print(f"packed_emb: {packed_emb.data.shape}")
         

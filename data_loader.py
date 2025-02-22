@@ -22,7 +22,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class VideoDataset(data.Dataset):
-    def __init__(self, prefix, gloss_dict, drop_ratio=1, num_gloss=-1, transform_mode= True, frame_interval= 1, image_scale= 1.0, kernel_size= 1, input_size= 224, mode= 'train', data_type= 'video'):
+    def __init__(self, prefix, gloss_dict, drop_ratio=1, num_gloss=-1, transform_mode= True, frame_interval= 1, image_scale= 1.0, kernel_size= 1, input_size= 224, mode= 'train', data_type= 'video', feature_folder= None, infor_folder= None):
         self.mode= mode
         self.prefix= prefix
         self.transform_mode= True if mode == 'train' else False
@@ -31,13 +31,18 @@ class VideoDataset(data.Dataset):
         kernel_sizes= kernel_size
         self.data_type= data_type
         self.dict= gloss_dict
+        self.feature_folder = feature_folder
         self.num_gloss= num_gloss
         self.input_size= input_size
         self.frame_interval= frame_interval
         self.drop_ratio= drop_ratio
+        self.infor_folder= infor_folder
         self.feature_prefix = f"{self.prefix}\\features\\fullFrame-256x256px\\{self.mode}"
         # load the pickle file
         self.inputs_list= pickle.load(open(f'Information_dict\\{self.mode}_info.pkl', 'rb'))
+        #using for Kaggle notebook
+        if self.infor_folder:
+            self.inputs_list = pickle.load(open(f'{self.infor_folder}/{self.mode}_info.pkl', 'rb'))
         self.data_aug = self.transform()
         
     def __getitem__(self, index):
@@ -47,12 +52,14 @@ class VideoDataset(data.Dataset):
             return input_data, torch.LongTensor(label), self.inputs_list[index]['label'], vid_len
         elif self.data_type == 'feature':
             input_data, label = self.read_feature(index)
-            return input_data, label, self.inputs_list[index]['label'], vid_len
+            return input_data, torch.tensor([label]), self.inputs_list[index]['label'], vid_len
     
     def read_video(self, index):
         # load file info
         file_info = self.inputs_list[index]
         img_folder = self.prefix + f'\\features\\fullFrame-256x256px\\{self.mode}\\' + file_info['fileid']
+        if self.feature_folder:
+            img_folder = self.feature_folder + f'/{self.mode}/' + file_info['fileid']
         # print(img_folder)
         img_list = sorted(glob.glob(img_folder + '\\*.jpg'))
         # print(f'img_list: {img_list}')

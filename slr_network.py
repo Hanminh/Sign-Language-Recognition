@@ -32,14 +32,14 @@ class SLR_Network(nn.Module):
         
         self.classifier = nn.Linear(self.hidden_size, self.dict_size)
         
-    def forward(self, feat):
+    def forward(self, feat, vid_len):
         batch, temp, channel, height, width = feat.shape
         feat = feat.permute(0, 2, 1, 3, 4) # Shape: (batch, channels, T, H, W)
         feat = self.CorrNet(feat)
         
         # Convolution1D
         feat = feat.view(batch, temp, -1).permute((0, 2, 1))
-        out_conv = self.ConvNet(feat, feat.shape[2]) 
+        out_conv = self.ConvNet(feat, vid_len) 
         
         # BiLSTM 
         feat = out_conv["feature"].permute(2, 0, 1)
