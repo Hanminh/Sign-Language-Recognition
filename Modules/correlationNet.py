@@ -137,4 +137,4 @@ class BasicBlock(nn.Module):
                         
             return out
 
-model = ResNet(BasicBlock, [2, 2, 2, 2], num_classes=1000)
+# model = ResNet(BasicBlock, [2, 2, 2, 2], num_classes=1000)

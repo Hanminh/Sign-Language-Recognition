@@ -19,6 +19,13 @@ class Convolution1D(nn.Module):
             padding= 0,
             stride= 1
         )
+        self.conv1d_2 = nn.Conv1d(
+            in_channels= self.hidden_size,
+            out_channels= self.hidden_size,
+            kernel_size= self.kernel_size,
+            padding= 0,
+            stride= 1
+        )
         self.pool = nn.MaxPool1d(kernel_size= 2, ceil_mode= False)
         if self.batch_norm:
             self.bn = nn.BatchNorm1d(self.hidden_size)
@@ -33,7 +40,7 @@ class Convolution1D(nn.Module):
         if self.batch_norm:
             x = self.bn(x)
         x = self.relu(x)
-        x = self.conv1d(x)
+        x = self.conv1d_2(x)
         x = self.pool(x)
         if self.batch_norm:
             x = self.bn(x)

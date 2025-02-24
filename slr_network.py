@@ -3,14 +3,13 @@ import torch.nn.functional as F
 from Modules.BiLSTM import BiLSTM
 from Modules.Convolution1D import Convolution1D
 from Modules.correlationNet import BasicBlock, conv3x3, Get_Correlation, ResNet
-
+from Modules.Loss import SeqKD
 class SLR_Network(nn.Module):
-    def __init__(self, hidden_size= 1024, kernel_size=5,  num_classes= 1024, dict_size= 1024):
+    def __init__(self, hidden_size= 1024, kernel_size=5,  num_classes= 1024):
         super(SLR_Network, self).__init__()
         self.hidden_size = hidden_size
         self.num_classes = num_classes
         self.kernel_size = kernel_size
-        self.dict_size = dict_size
         
         self.BiLSTM = BiLSTM(
             input_size=self.hidden_size, 
@@ -30,7 +29,9 @@ class SLR_Network(nn.Module):
             kernel_size= self.kernel_size
         )
         
-        self.classifier = nn.Linear(self.hidden_size, self.dict_size)
+        self.classifier = nn.Linear(self.hidden_size, self.num_classes)
+        self.ctc_loss = nn.CTCLoss(blank= 0, zero_infinity= True)
+        self.distillation_loss = SeqKD(T= 8)
         
     def forward(self, feat, vid_len):
         batch, temp, channel, height, width = feat.shape
@@ -52,3 +53,25 @@ class SLR_Network(nn.Module):
             "lstm_hidden": out_lstm["hidden"],
             "sequence_logits": output
         }
+    
+    def get_loss(self, output, input_len, label, label_len):
+        loss = 0 
+        
+        # CTC Loss
+        loss += self.ctc_loss(
+            output["sequence_logits"].log_softmax(-1),
+            label,
+            input_len,
+            label_len
+        ).mean()
+        
+        # Distillation Loss
+        loss += self.distillation_loss(
+            output["conv_logits"],
+            output["sequence_logits"].detach()
+        )
+        
+        return loss
+        
+        
+        
