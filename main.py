@@ -12,6 +12,7 @@ from Modules.BiLSTM import BiLSTM
 from Modules.correlationNet import ResNet, BasicBlock
 from slr_network import SLR_Network
 from torch.nn import CTCLoss
+from torch.cuda.amp import autocast, GradScaler
 from argument import *
 import gc
 from tqdm import tqdm
@@ -53,6 +54,7 @@ model = SLR_Network(num_classes= len(id2gloss) + 1)
 model.to('cuda')
 criterion = CTCLoss(blank= 0, zero_infinity= True)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+scaler = GradScaler()
 
 loss_histories = []
 torch.cuda.empty_cache()
@@ -61,35 +63,36 @@ for epoch in range(5):
   running_loss = 0.0
   model.train()
   for i, sample in tqdm(enumerate(dataloader)):
-      input = sample[0]
-      input = input.to('cuda')
-      vid_len = sample[1]
-      # vid_len = vid_len.to('cuda')
-      # encode_seq = encode_text(sample)
-
-      # Forward pass
-      output = model(input, vid_len)
-      input_lengths = torch.tensor([output["sequence_logits"].shape[0] for i in range(output['sequence_logits'].shape[1])], dtype=torch.long)
-      target_lengths = sample[3]
-      
-    #   loss = criterion(
-    #       output["sequence_logits"].log_softmax(-1),  # Shape (T, N, C)
-    #       sample[2],  # Flattened target sequence
-    #       input_lengths,  # Must have shape (batch_size,)
-    #       target_lengths,  # Must have shape (batch_size,)
-    #   )
-      
+    input = sample[0]
+    input = input.to('cuda')
+    vid_len = sample[1]
+    # vid_len = vid_len.to('cuda')
+    # encode_seq = encode_text(sample)
+    # Forward pass
+    output = model(input, vid_len)
+    input_lengths = torch.tensor([output["sequence_logits"].shape[0] for i in range(output['sequence_logits'].shape[1])], dtype=torch.long)
+    target_lengths = sample[3]
+    
+    #  loss = criterion(
+    #      output["sequence_logits"].log_softmax(-1),  # Shape (T, N, C)
+    #      sample[2],  # Flattened target sequence
+    #      input_lengths,  # Must have shape (batch_size,)
+    #      target_lengths,  # Must have shape (batch_size,)
+    #  )
+    with autocast():
       loss = model.get_loss(output, input_lengths, sample[2], target_lengths)
-      
-      running_loss += loss.item()
-
-      # Backward and optimize
-      optimizer.zero_grad()
-      loss.backward()
-      optimizer.step()
-
-      # loss.detach()
-      del loss, input, output, vid_len, sample
+    
+    running_loss += loss.item()
+    # Backward and optimize
+    optimizer.zero_grad()
+    #  loss.backward()
+    #  optimizer.step()
+    scaler.scale(loss).backward()
+    scaler.step(optimizer)
+    scaler.update()
+    
+    # loss.detach()
+    del loss, input, output, vid_len, sample
       # torch.cuda.empty_cache()
       # gc.collect()
   epoch_loss = running_loss / len(dataloader)
