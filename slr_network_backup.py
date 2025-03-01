@@ -30,8 +30,8 @@ class SLR_Network(nn.Module):
         )
         
         self.classifier = nn.Linear(self.hidden_size, self.num_classes)
-        # self.ctc_loss = nn.CTCLoss(blank= 0, zero_infinity= True)
-        # self.distillation_loss = SeqKD(T= 8)
+        self.ctc_loss = nn.CTCLoss(blank= 0, zero_infinity= True)
+        self.distillation_loss = SeqKD(T= 8)
         
     def forward(self, feat, vid_len):
         batch, temp, channel, height, width = feat.shape
@@ -65,18 +65,18 @@ class SLR_Network(nn.Module):
             label_len
         ).mean()
         
-        # # Distillation Loss
-        # loss += 25 * self.distillation_loss(
-        #     output["conv_logits"],
-        #     output["sequence_logits"].detach()
-        # )
+        # Distillation Loss
+        loss += 25 * self.distillation_loss(
+            output["conv_logits"],
+            output["sequence_logits"].detach()
+        )
         
-        # loss += self.ctc_loss(
-        #     output["conv_logits"].permute(2, 0, 1).log_softmax(-1),
-        #     label,
-        #     input_len,
-        #     label_len
-        # )
+        loss += self.ctc_loss(
+            output["conv_logits"].permute(2, 0, 1).log_softmax(-1),
+            label,
+            input_len,
+            label_len
+        )
         
         return loss
         

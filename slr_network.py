@@ -2,14 +2,23 @@ import torch.nn as nn
 import torch.nn.functional as F
 from Modules.BiLSTM import BiLSTM
 from Modules.Convolution1D import Convolution1D
-from Modules.correlationNet import BasicBlock, conv3x3, Get_Correlation, ResNet
+from Modules.attention_corrnet import BasicBlock, conv3x3, Get_Correlation, ResNet
 from Modules.Loss import SeqKD
+from Modules.CTCDecoder import CTCDecoder
+import jiwer
+
 class SLR_Network(nn.Module):
-    def __init__(self, hidden_size= 1024, kernel_size=5,  num_classes= 1024):
+    def __init__(self, hidden_size= 1024, kernel_size=5,  num_classes= 1024, dictionary= None):
         super(SLR_Network, self).__init__()
         self.hidden_size = hidden_size
         self.num_classes = num_classes
         self.kernel_size = kernel_size
+        
+        self.decoder = CTCDecoder(
+            dictionary, 
+            num_classes,
+            beam_size= 10
+        )
         
         self.BiLSTM = BiLSTM(
             input_size=self.hidden_size, 
@@ -33,6 +42,12 @@ class SLR_Network(nn.Module):
         self.ctc_loss = nn.CTCLoss(blank= 0, zero_infinity= True)
         self.distillation_loss = SeqKD(T= 8)
         
+    # def calculate_wer(pred, true):
+    #     pred_words = pred.split('|')[:-1]
+    #     pred_str = ' '.join(pred_words)
+    #     wer_score = jiwer.wer(true, pred_str)
+    #     return wer_score
+       
     def forward(self, feat, vid_len):
         batch, temp, channel, height, width = feat.shape
         feat = feat.permute(0, 2, 1, 3, 4) # Shape: (batch, channels, T, H, W)
@@ -46,12 +61,15 @@ class SLR_Network(nn.Module):
         feat = out_conv["feature"].permute(2, 0, 1)
         out_lstm = self.BiLSTM(feat, [out_conv["feat_len"]])
         output = self.classifier(out_lstm["predictions"])
+        # decode = self.decoder.decode_logits(output["sequence_logits"].squeeze().cpu().detach().numpy())
+        decode = self.decoder.decode_logits(output.squeeze().cpu().detach().numpy())
         return {
             "feat_len": out_conv["feat_len"],
             "conv_logits": out_conv["logits"],
-            "lstm_predictions": out_lstm["predictions"],
-            "lstm_hidden": out_lstm["hidden"],
-            "sequence_logits": output
+            # "lstm_predictions": out_lstm["predictions"],
+            # "lstm_hidden": out_lstm["hidden"],
+            "sequence_logits": output,
+            "predictions": decode
         }
     
     def get_loss(self, output, input_len, label, label_len):

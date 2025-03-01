@@ -4,3 +4,4 @@ test_slr_net.ipynb
 test_train.ipynb
 test_visualize_loss.ipynb
 test_wer_evaluate.ipynb
+test_3dcnn.ipynb

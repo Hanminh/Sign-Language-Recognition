@@ -9,6 +9,7 @@ class Get_Correlation(nn.Module):
     def __init__(self, channels):
         super().__init__()
         reduction_channel = channels // 16
+        
         self.down_conv = nn.Conv3d(channels, reduction_channel, kernel_size=1, bias=False)
         self.down_conv2 = nn.Conv3d(channels, channels, kernel_size=1, bias=False)
         self.spatial_aggregation1 = nn.Conv3d(reduction_channel, reduction_channel, kernel_size=(9,3,3), padding= (4,1,1), dilation= (1,1,1) ,groups= reduction_channel)
