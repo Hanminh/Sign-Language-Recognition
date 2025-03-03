@@ -37,6 +37,19 @@ for i in list(gloss_dict.keys()):
     id2gloss.append(gloss_dict[i])
 # print(len(gloss_dict))
 
+from pyctcdecode import build_ctcdecoder
+dictionary = []
+dictionary.append(' ')
+for i in list(gloss_dict.keys()):
+    dictionary.append(i + '|')
+
+import jiwer
+def calculate_wer(pred, true):
+    pred_words = pred.split('|')[:-1]
+    pred_str = ' '.join(pred_words)
+    wer_score = jiwer.wer(true, pred_str)
+    return wer_score
+
 
 # Prepare dataset
 dataset = data_loader.VideoDataset(prefix= prefix, gloss_dict= gloss_dict, kernel_size= [('K', 3), ('P', 2)], mode= 'train')
@@ -52,15 +65,17 @@ dataloader = torch.utils.data.DataLoader(
 # Prepare the model
 model = SLR_Network(num_classes= len(id2gloss) + 1)
 model.to('cuda')
-criterion = CTCLoss(blank= 0, zero_infinity= True)
+# criterion = CTCLoss(blank= 0, zero_infinity= True)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 scaler = GradScaler()
 
 loss_histories = []
+wer_histories = []
 torch.cuda.empty_cache()
 
 for epoch in range(5):
   running_loss = 0.0
+  wer = 0.0
   model.train()
   for i, sample in tqdm(enumerate(dataloader)):
     input = sample[0]
@@ -83,6 +98,7 @@ for epoch in range(5):
       loss = model.get_loss(output, input_lengths, sample[2], target_lengths)
     
     running_loss += loss.item()
+    wer += calculate_wer(output["predictions"], sample[-1][0])
     # Backward and optimize
     optimizer.zero_grad()
     #  loss.backward()
@@ -96,7 +112,9 @@ for epoch in range(5):
       # torch.cuda.empty_cache()
       # gc.collect()
   epoch_loss = running_loss / len(dataloader)
+  wer = wer / len(dataloader)
   loss_histories.append(epoch_loss)
+  wer_histories.append(wer)
     
   torch.save({
     'epoch': epoch,
@@ -109,6 +127,7 @@ for epoch in range(5):
 
 # save the loss_histories
 np.save('/kaggle/working/loss_histories.npy', loss_histories)
+np.save('/kaggle/working/wer_histories.npy', wer_histories)
 
 # save the model
 torch.save(model.state_dict(), '/kaggle/working/model.pth')
