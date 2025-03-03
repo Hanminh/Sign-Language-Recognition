@@ -5,3 +5,6 @@ test_train.ipynb
 test_visualize_loss.ipynb
 test_wer_evaluate.ipynb
 test_3dcnn.ipynb
+test_crawl_data.ipynb
+test_process_data.ipynb
+test_vn_data_loader.ipynb
