@@ -74,7 +74,6 @@ class SLR_Network(nn.Module):
     
     def get_loss(self, output, input_len, label, label_len):
         loss = 0 
-        
         # CTC Loss
         loss += self.ctc_loss(
             output["sequence_logits"].log_softmax(-1),
@@ -85,7 +84,7 @@ class SLR_Network(nn.Module):
         
         # Distillation Loss
         loss += 25 * self.distillation_loss(
-            output["conv_logits"],
+            output["conv_logits"].permute(2, 0, 1),
             output["sequence_logits"].detach()
         )
         
@@ -94,7 +93,7 @@ class SLR_Network(nn.Module):
             label,
             input_len,
             label_len
-        )
+        ).mean()
         
         return loss
         

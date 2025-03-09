@@ -20,6 +20,5 @@ class SeqKD(nn.Module):
         ref_probs = F.softmax(ref_logits[:, :, start_idx:]/self.T, dim=-1) \
             .view(-1, ref_logits.shape[2] - start_idx)
         loss = self.kdloss(prediction_logits, ref_probs)*self.T*self.T
-
         return loss
 
