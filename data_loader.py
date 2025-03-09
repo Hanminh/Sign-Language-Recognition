@@ -25,7 +25,7 @@ class VideoDataset(data.Dataset):
     def __init__(self, prefix, gloss_dict, drop_ratio=1, num_gloss=-1, transform_mode= True, frame_interval= 1, image_scale= 1.0, kernel_size= 1, input_size= 224, mode= 'train', data_type= 'video', feature_folder= None, infor_folder= None):
         self.mode= mode
         self.prefix= prefix
-        self.transform_mode= True if mode == 'train' else False
+        self.transform_mode= True if transform_mode else False
         self.image_scale= image_scale
         global kernel_sizes
         kernel_sizes= kernel_size
@@ -96,13 +96,11 @@ class VideoDataset(data.Dataset):
         if self.transform_mode:
             print("Apply training transform")
             return data_augmentation.Compose([
-                # video_augmentation.CenterCrop(224),
-                # video_augmentation.WERAugment('/lustre/wangtao/current_exp/exp/baseline/boundary.npy'),
                 data_augmentation.RandomCrop(self.input_size),
                 data_augmentation.RandomHorizontalFlip(0.5),
                 data_augmentation.Resize(self.image_scale),
                 data_augmentation.ToTensor(),
-                data_augmentation.TemporalRescale(0.2, self.frame_interval),
+                # data_augmentation.TemporalRescale(0.2, self.frame_interval),
             ])
         else:
             print("Apply validation transform")

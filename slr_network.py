@@ -8,12 +8,12 @@ from Modules.CTCDecoder import CTCDecoder
 import jiwer
 
 class SLR_Network(nn.Module):
-    def __init__(self, hidden_size= 1024, kernel_size=5,  num_classes= 1024, dictionary= None):
+    def __init__(self, hidden_size= 1024, kernel_size=5,  num_classes= 1024, dictionary= None, T = 1):
         super(SLR_Network, self).__init__()
         self.hidden_size = hidden_size
         self.num_classes = num_classes
         self.kernel_size = kernel_size
-        
+        self.T = T
         self.decoder = CTCDecoder(
             dictionary, 
             num_classes,
@@ -40,7 +40,7 @@ class SLR_Network(nn.Module):
         
         self.classifier = nn.Linear(self.hidden_size, self.num_classes)
         self.ctc_loss = nn.CTCLoss(blank= 0, zero_infinity= True)
-        self.distillation_loss = SeqKD(T= 8)
+        self.distillation_loss = SeqKD(T= self.T)
         
     # def calculate_wer(pred, true):
     #     pred_words = pred.split('|')[:-1]
