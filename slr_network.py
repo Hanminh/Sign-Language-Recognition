@@ -62,7 +62,7 @@ class SLR_Network(nn.Module):
         out_lstm = self.BiLSTM(feat, [out_conv["feat_len"]])
         output = self.classifier(out_lstm["predictions"])
         # decode = self.decoder.decode_logits(output["sequence_logits"].squeeze().cpu().detach().numpy())
-        decode = self.decoder.decode_logits(output.squeeze().cpu().detach().numpy())
+        decode = self.decoder.decode_logits(output.view(-1, self.num_classes).squeeze().cpu().detach().numpy())
         return {
             "feat_len": out_conv["feat_len"],
             "conv_logits": out_conv["logits"],
