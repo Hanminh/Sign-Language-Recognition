@@ -34,3 +34,4 @@ history_wer_attention/*
 history_wer_distillation/*
 test_grad_cam.ipynb
 model_checkpoint_epoch_1.pth
+model_checkpoint_epoch_9.pth

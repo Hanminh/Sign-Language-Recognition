@@ -5,6 +5,7 @@ from Modules.Convolution1D import Convolution1D
 from Modules.attention_corrnet import BasicBlock, conv3x3, Get_Correlation, ResNet
 from Modules.Loss import SeqKD
 from Modules.CTCDecoder import CTCDecoder
+from Modules.temporal_lifting_pool import TemporalConv
 import jiwer
 
 class SLR_Network(nn.Module):
@@ -24,6 +25,7 @@ class SLR_Network(nn.Module):
             input_size=self.hidden_size, 
             hidden_size= self.hidden_size // 2, 
             num_classes= self.num_classes, 
+            num_layers= 2,
             bidirectional= True)
         
         self.CorrNet = ResNet(
@@ -31,12 +33,19 @@ class SLR_Network(nn.Module):
             layers= [2, 2, 2, 2],
             num_classes= self.num_classes)
         
-        self.ConvNet = Convolution1D(
-            input_size= self.num_classes, 
+        # self.ConvNet = Convolution1D(
+        #     input_size= self.num_classes, 
+        #     hidden_size= self.hidden_size,
+        #     num_classes= self.num_classes,
+        #     kernel_size= self.kernel_size
+        # )
+        
+        self.Temporal_Conv = TemporalConv(
+            input_size= self.num_classes,
             hidden_size= self.hidden_size,
             num_classes= self.num_classes,
-            kernel_size= self.kernel_size
-        )
+            conv_type= 2
+        ) 
         
         self.classifier = nn.Linear(self.hidden_size, self.num_classes)
         self.ctc_loss = nn.CTCLoss(blank= 0, zero_infinity= True)
@@ -55,7 +64,7 @@ class SLR_Network(nn.Module):
         
         # Convolution1D
         feat = feat.view(batch, temp, -1).permute((0, 2, 1))
-        out_conv = self.ConvNet(feat, vid_len) 
+        out_conv = self.Temporal_Conv(feat, vid_len) 
         
         # BiLSTM 
         feat = out_conv["feature"].permute(2, 0, 1)
@@ -65,9 +74,9 @@ class SLR_Network(nn.Module):
         decode = self.decoder.decode_logits(output.view(-1, self.num_classes).squeeze().cpu().detach().numpy())
         return {
             "feat_len": out_conv["feat_len"],
-            "conv_logits": out_conv["logits"],
-            # "lstm_predictions": out_lstm["predictions"],
-            # "lstm_hidden": out_lstm["hidden"],
+            "conv_logits": out_conv["conv_logits"],
+            "loss_update_lift": out_conv["loss_LiftPool_u"],
+            "loss_pred_lift": out_conv["loss_LiftPool_p"],
             "sequence_logits": output,
             "predictions": decode
         }
@@ -88,12 +97,15 @@ class SLR_Network(nn.Module):
             output["sequence_logits"].detach()
         )
         
+        
         loss += self.ctc_loss(
             output["conv_logits"].permute(2, 0, 1).log_softmax(-1),
             label,
             input_len,
             label_len
         ).mean()
+        
+        loss += 0.0005 * (output["loss_update_lift"] + output["loss_pred_lift"])
         
         return loss
         
