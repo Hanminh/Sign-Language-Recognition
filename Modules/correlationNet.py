@@ -4,6 +4,9 @@ import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
 import torch.nn.functional as F
+import torch.utils.model_zoo as model_zoo
+from torch.utils.checkpoint import checkpoint
+from torchvision.models import resnet18, ResNet18_Weights
 
 class Get_Correlation(nn.Module):
     def __init__(self, channels):
@@ -138,4 +141,27 @@ class BasicBlock(nn.Module):
                         
             return out
 
-# model = ResNet(BasicBlock, [2, 2, 2, 2], num_classes=1000)
+def pretrain_resnet18(num_class= 1000):
+    model = ResNet(BasicBlock, [2, 2, 2, 2], num_classes= num_class)
+    model_urls = {
+    'resnet18': 'https://download.pytorch.org/models/resnet18-f37072fd.pth'
+    }
+    checkpoint = model_zoo.load_url(model_urls['resnet18'], map_location= 'cpu')
+    layer_name = list(checkpoint.keys())
+    for ln in layer_name:
+        if 'conv' in ln or 'downsample.0.weight' in ln:
+            checkpoint[ln] = checkpoint[ln].unsqueeze(2)
+    model.load_state_dict(checkpoint, strict= False)
+    del checkpoint
+    import gc
+    gc.collect()
+    return model
+
+def test():
+    net = pretrain_resnet18()
+    x = torch.randn(1, 3, 16, 224, 224)
+    y = net(x)
+    print(y.size())
+    
+# test()
+

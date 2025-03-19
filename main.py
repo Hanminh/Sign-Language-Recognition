@@ -9,7 +9,7 @@ import os
 import torch
 from Modules import BiLSTM
 from Modules.BiLSTM import BiLSTM
-from Modules.correlationNet import ResNet, BasicBlock
+from Modules.attention_corrnet import ResNet, BasicBlock
 from slr_network import SLR_Network
 from torch.nn import CTCLoss
 from torch.cuda.amp import autocast, GradScaler
@@ -24,7 +24,8 @@ def encode_text(sample):
         if i == len(sample[2]) - 1:
             encode_text = torch.cat((encode_text, torch.tensor([sample[2][i]])))
     return encode_text
-    
+  
+
 
 # get the gloss_dict
 prefix = os.getenv("DATA_PATH")
@@ -52,7 +53,7 @@ def calculate_wer(pred, true):
 
 
 # Prepare dataset
-dataset = data_loader.VideoDataset(prefix= prefix, gloss_dict= gloss_dict, kernel_size= [('K', 3), ('P', 2)], mode= 'train')
+dataset = data_loader.VideoDataset(prefix= prefix, gloss_dict= gloss_dict, kernel_size= [('K', 5), ('P', 2),('K', 5), ('P', 2)], mode= 'train')
 dataloader = torch.utils.data.DataLoader(
         dataset=dataset,
         batch_size=1,
@@ -63,10 +64,10 @@ dataloader = torch.utils.data.DataLoader(
     )
 
 # Prepare the model
-model = SLR_Network(num_classes= len(id2gloss) + 1)
+model = SLR_Network(num_classes= len(id2gloss) + 1, dictionary= dictionary)
 model.to('cuda')
 # criterion = CTCLoss(blank= 0, zero_infinity= True)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay= 0.0001)
 scaler = GradScaler()
 
 loss_histories = []
@@ -88,42 +89,38 @@ for epoch in range(5):
     input_lengths = torch.tensor([output["sequence_logits"].shape[0] for i in range(output['sequence_logits'].shape[1])], dtype=torch.long)
     target_lengths = sample[3]
     
-    #  loss = criterion(
-    #      output["sequence_logits"].log_softmax(-1),  # Shape (T, N, C)
-    #      sample[2],  # Flattened target sequence
-    #      input_lengths,  # Must have shape (batch_size,)
-    #      target_lengths,  # Must have shape (batch_size,)
-    #  )
     with autocast():
       loss = model.get_loss(output, input_lengths, sample[2], target_lengths)
     
+    # loss = model.get_loss(output, input_lengths, sample[2], target_lengths)
     running_loss += loss.item()
     wer += calculate_wer(output["predictions"], sample[-1][0])
+    
     # Backward and optimize
     optimizer.zero_grad()
-    #  loss.backward()
-    #  optimizer.step()
+    # loss.backward()
+    # optimizer.step()
     scaler.scale(loss).backward()
     scaler.step(optimizer)
     scaler.update()
     
     # loss.detach()
     del loss, input, output, vid_len, sample
-      # torch.cuda.empty_cache()
-      # gc.collect()
+    gc.collect()
+    torch.cuda.empty_cache()
   epoch_loss = running_loss / len(dataloader)
   wer = wer / len(dataloader)
   loss_histories.append(epoch_loss)
   wer_histories.append(wer)
     
-  torch.save({
-    'epoch': epoch,
-    'model_state_dict': model.state_dict(),
-    'optimizer_state_dict': optimizer.state_dict(),
-    'loss': epoch_loss,
-  }, f'/kaggle/working/model_checkpoint_epoch_{epoch}.pth')
+  # torch.save({
+  #   'epoch': epoch,
+  #   'model_state_dict': model.state_dict(),
+  #   'optimizer_state_dict': optimizer.state_dict(),
+  #   'loss': epoch_loss,
+  # }, f'/kaggle/working/model_checkpoint_epoch_{epoch}.pth')
     
-  print(f'Epoch [{epoch+1}/{10}], Loss: {epoch_loss:.4f}')
+  print(f'Epoch [{epoch+1}/{10}], Loss: {epoch_loss:.4f}, Wer: {wer:.4f}')
 
 # save the loss_histories
 np.save('/kaggle/working/loss_histories.npy', loss_histories)
@@ -132,5 +129,3 @@ np.save('/kaggle/working/wer_histories.npy', wer_histories)
 # save the model
 torch.save(model.state_dict(), '/kaggle/working/model.pth')
 
-        
-                

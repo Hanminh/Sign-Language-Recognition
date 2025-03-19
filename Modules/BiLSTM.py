@@ -57,7 +57,7 @@ class BiLSTM(nn.Module):
             
         return {
             "predictions": rnn_outputs,
-            "hidden": hidden
+            # "hidden": hidden
         }
         
     def __cat_directions(self, hidden):

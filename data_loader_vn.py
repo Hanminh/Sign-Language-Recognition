@@ -26,15 +26,14 @@ load_dotenv()
 ROOT = os.getenv("VN_SAVE_PATH")
 
 class VideoDataset(data.Dataset):
-    def __init__(self,  drop_ratio=1, num_gloss=-1, image_scale= 1.0, kernel_size= 1, input_size= 224, mode= 'train', data_type= 'video', feature_folder= None, infor_folder= None):
+    def __init__(self,  drop_ratio=1, image_scale= 1.0, kernel_size= [('K', 5), ('P', 2),('K', 5), ('P', 2)], input_size= 224, mode= 'train', data_type= 'video', feature_folder= None, infor_folder= None, transform_mode= False):
         self.mode= mode
-        self.transform_mode= True if mode == 'train' else False
+        self.transform_mode= transform_mode
         self.image_scale= image_scale
         global kernel_sizes
         kernel_sizes= kernel_size
         self.data_type= data_type
         self.feature_folder = feature_folder
-        self.num_gloss= num_gloss
         self.input_size= input_size
         self.drop_ratio= drop_ratio
         self.infor_folder= infor_folder
@@ -88,7 +87,7 @@ class VideoDataset(data.Dataset):
         data = [cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB) for img_path in img_list] 
         # convert data to numpy array
         data = np.array(data)
-        return data, label_list, sent, len(img_list)
+        return data, label_list, sent, data.shape[1]
     
     def read_feature(self, index):
         # load file info
@@ -124,11 +123,12 @@ class VideoDataset(data.Dataset):
     def collate_fn(batch):
         batch = [item for item in sorted(batch, key=lambda x: len(x[0]), reverse=True)]
         video, label, info, vid_len = list(zip(*batch))
-        
         left_pad = 0
         last_stride = 1
         total_stride = 1
         global kernel_sizes 
+        # print(kernel_sizes)
+        kernel_sizes
         for layer_idx, ks in enumerate(kernel_sizes):
             if ks[0] == 'K':
                 left_pad = left_pad * last_stride 
