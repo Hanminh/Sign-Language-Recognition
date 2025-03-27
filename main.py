@@ -13,9 +13,12 @@ from Modules.attention_corrnet import ResNet, BasicBlock
 from slr_network import SLR_Network
 from torch.nn import CTCLoss
 from torch.cuda.amp import autocast, GradScaler
+import torch.optim as optim
 from argument import *
 import gc
 from tqdm import tqdm
+import os
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 def encode_text(sample):
     encode_text = torch.tensor([])
@@ -30,7 +33,7 @@ def encode_text(sample):
 # get the gloss_dict
 prefix = os.getenv("DATA_PATH")
 # prepare the gloss dictionary
-gloss_dict = np.load('Information_dict\\gloss_dict.npy', allow_pickle= True)
+gloss_dict = np.load('Information_dict/gloss_dict.npy', allow_pickle= True)
 gloss_dict = gloss_dict.item()
 id2gloss = []
 id2gloss.append('<blank>')
@@ -53,14 +56,15 @@ def calculate_wer(pred, true):
 
 
 # Prepare dataset
-dataset = data_loader.VideoDataset(prefix= prefix, gloss_dict= gloss_dict, kernel_size= [('K', 5), ('P', 2),('K', 5), ('P', 2)], mode= 'train')
+dataset = data_loader.VideoDataset(prefix= prefix, gloss_dict= gloss_dict, kernel_size= [('K', 5), ('P', 2),('K', 5), ('P', 2)], mode= 'train', frame_interval= 1)
 dataloader = torch.utils.data.DataLoader(
         dataset=dataset,
-        batch_size=1,
+        batch_size=2,
         shuffle=True,
         drop_last=True,
         num_workers=0,
-        collate_fn=dataset.collate_fn
+        collate_fn=dataset.collate_fn,
+        pin_memory= True
     )
 
 # Prepare the model
@@ -68,64 +72,97 @@ model = SLR_Network(num_classes= len(id2gloss) + 1, dictionary= dictionary)
 model.to('cuda')
 # criterion = CTCLoss(blank= 0, zero_infinity= True)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay= 0.0001)
+scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones= [40, 60], gamma= 1/5)
 scaler = GradScaler()
+
+# checkpoint = torch.load('/home/guest/Minh_20210605/Sign-Language-Recognition/Model/model_checkpoint_epoch_40.pth')
+# model.load_state_dict(checkpoint['model_state_dict'], strict= False)
+# optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+# print("load model")
 
 loss_histories = []
 wer_histories = []
 torch.cuda.empty_cache()
 
-for epoch in range(5):
+model.train()
+for epoch in range(41, 80):
+  
   running_loss = 0.0
   wer = 0.0
   model.train()
   for i, sample in tqdm(enumerate(dataloader)):
-    input = sample[0]
-    input = input.to('cuda')
-    vid_len = sample[1]
-    # vid_len = vid_len.to('cuda')
-    # encode_seq = encode_text(sample)
-    # Forward pass
-    output = model(input, vid_len)
-    input_lengths = torch.tensor([output["sequence_logits"].shape[0] for i in range(output['sequence_logits'].shape[1])], dtype=torch.long)
-    target_lengths = sample[3]
-    
-    with autocast():
-      loss = model.get_loss(output, input_lengths, sample[2], target_lengths)
-    
-    # loss = model.get_loss(output, input_lengths, sample[2], target_lengths)
-    running_loss += loss.item()
-    wer += calculate_wer(output["predictions"], sample[-1][0])
-    
-    # Backward and optimize
-    optimizer.zero_grad()
-    # loss.backward()
-    # optimizer.step()
-    scaler.scale(loss).backward()
-    scaler.step(optimizer)
-    scaler.update()
-    
-    # loss.detach()
-    del loss, input, output, vid_len, sample
-    gc.collect()
-    torch.cuda.empty_cache()
+    try:
+      input = sample[0].to('cuda', non_blocking=True)
+      # vid_len = sample[1].to('cuda', non_blocking=True)
+      # targets = sample[2].to('cuda', non_blocking=True)
+      # target_lengths = sample[3].to('cuda', non_blocking=True)
+      vid_len = sample[1]
+      targets = sample[2]
+      target_lengths = sample[3]
+
+      # Forward pass
+      with autocast():
+        output = model(input, vid_len)
+        input_lengths = torch.full(
+            (output['sequence_logits'].shape[1],), 
+            output['sequence_logits'].shape[0], 
+            dtype=torch.long
+          )
+        target_lengths = sample[3]
+        loss = model.get_loss(output, input_lengths, sample[2], target_lengths)
+      
+      # loss = model.get_loss(output, input_lengths, sample[2], target_lengths)
+      running_loss += loss.item()
+      with torch.no_grad():
+        for i in range(2):
+          wer += calculate_wer(output["predictions"][i], sample[-1][i])
+      
+      # Backward and optimize
+      optimizer.zero_grad()
+      # loss.backward()
+      # optimizer.step()
+      scaler.scale(loss).backward()
+      scaler.step(optimizer)
+      scaler.update()
+
+      #update learning rate 
+      scheduler.step()
+
+      loss.detach()
+      del loss, input, output, vid_len
+      gc.collect()
+      torch.cuda.empty_cache()
+    except Exception as e:
+      print(e)
+      print(input.shape)
+      gc.collect()
+      torch.cuda.empty_cache()
   epoch_loss = running_loss / len(dataloader)
   wer = wer / len(dataloader)
   loss_histories.append(epoch_loss)
   wer_histories.append(wer)
+  gc.collect()
+  torch.cuda.empty_cache()
+  if epoch % 10 == 0 :
+     torch.save({
+      'epoch': epoch,
+      'model_state_dict': model.state_dict(),
+      'optimizer_state_dict': optimizer.state_dict(),
+      'loss': epoch_loss,
+    }, f'/home/guest/Minh_20210605/Sign-Language-Recognition/Model/model_checkpoint_epoch_{epoch}.pth')
     
-  # torch.save({
-  #   'epoch': epoch,
-  #   'model_state_dict': model.state_dict(),
-  #   'optimizer_state_dict': optimizer.state_dict(),
-  #   'loss': epoch_loss,
-  # }, f'/kaggle/working/model_checkpoint_epoch_{epoch}.pth')
-    
-  print(f'Epoch [{epoch+1}/{10}], Loss: {epoch_loss:.4f}, Wer: {wer:.4f}')
+  print(f'Epoch [{epoch+1}/{80}], Loss: {epoch_loss:.4f}, Wer: {wer:.4f}')
 
+torch.save({
+  'epoch': epoch,
+  'model_state_dict': model.state_dict(),
+  'optimizer_state_dict': optimizer.state_dict(),
+  'loss': epoch_loss,
+}, f'/home/guest/Minh_20210605/Sign-Language-Recognition/Model/final_model.pth')
 # save the loss_histories
-np.save('/kaggle/working/loss_histories.npy', loss_histories)
-np.save('/kaggle/working/wer_histories.npy', wer_histories)
+np.save('loss_histories.npy', loss_histories)
+np.save('wer_histories.npy', wer_histories)
 
 # save the model
-torch.save(model.state_dict(), '/kaggle/working/model.pth')
+torch.save(model.state_dict(), 'model.pth')
 

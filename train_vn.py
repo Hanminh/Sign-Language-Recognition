@@ -60,61 +60,48 @@ for epoch in range(5):
   num_loss = 1
   for i, sample in tqdm(enumerate(dataloader)):
       input_model = sample[0].to('cuda')
-      vid_len = vid_len = torch.tensor([sample[0].shape[1]]).to('cuda')
-      target_lengths = sample[3].to('cuda')
-      
-      # input_model = sample[0]
-      # vid_len = vid_len = torch.tensor([sample[0].shape[1]])
-      # target_lengths = sample[3]
-      
-      # Forward pass
-      output_model = model(input_model, vid_len)
-      # input_lengths = torch.tensor([output_model["sequence_logits"].shape[0] for i in range(output_model['sequence_logits'].shape[1])], dtype=torch.long)      
-      input_lengths = torch.tensor([output_model["sequence_logits"].shape[0] for i in range(output_model['sequence_logits'].shape[1])], dtype=torch.long).to('cuda')
-      if output_model["predictions"] is not None:
-          wer += calculate_wer(output_model["predictions"], sample[-1][0])
-          num_wer = num_wer + 1
-      optimizer.zero_grad()
-      try:
-          with autocast():
-              loss = model.get_loss(output_model, input_lengths, sample[2], target_lengths)
-          if loss is None:
-              del loss, output_model, input_model, vid_len, input_lengths, target_lengths
-              continue
-          if np.isinf(loss.item()) or np.isnan(loss.item()) or loss is None:
-              del loss, output_model, input_model, vid_len, input_lengths, target_lengths
-              continue
-          running_loss += loss.item()
-          num_loss = num_loss + 1
-          
-          # Backward and optimize
-          scaler.scale(loss).backward()
-          scaler.step((optimizer))
-          scaler.update()
-      except Exception as e:
-          print(sample[0])
-          print(sample[0].shape)
-          print(e)
-          break
-      # loss.detach()
-      del loss, input_model, output_model, vid_len, sample, input_lengths, target_lengths
-      del input_model
-    #   gc.collect()
-    #   torch.cuda.empty_cache()
+      vid_len = vid_len = torch.tensor([sample[0].shape[1]])
+      target_lengths = sample[3]
+      target = sample[2]
+      # forward pass
+      with autocast():
+        output = model(input_model, vid_len)
+        input_lengths = torch.full(
+            (output['sequence_logits'].shape[1],),
+            output['sequence_logits'].shape[0],
+            dtype=torch.long,
+        )
+        loss = model.get_loss(output, input_lengths, target, target_lengths)
+        running_loss += loss.item()
+        with torch.no_grad():
+            for i in range(1):
+                wer += calculate_wer(output['sequence_logits'][i], sample[-1][i])
+        
+        # backward pass
+        optimizer.zero_grad()
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+        
+      loss.detach()
+      del loss, input_model, output, vid_len
+      gc.collect()
+      torch.cuda.empty_cache()
       
   epoch_loss = running_loss / num_loss
   wer = wer / num_wer
   loss_histories.append(epoch_loss)
   wer_histories.append(wer)
+  gc.collect()
+  torch.cuda.empty_cache()
   print(f'Epoch [{epoch+1}/{10}], Loss: {epoch_loss:.4f}, WER: {wer}, Num_wer: {num_wer}')
-  if epoch == 4:
+  if epoch == 1:
       torch.save({
-        'epoch': epoch,
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
-        'loss': epoch_loss,
+          'epoch': epoch,
+          'model_state_dict': model.state_dict(),
+          'optimizer_state_dict': optimizer.state_dict(),
+          'loss': epoch_loss,
       }, f'/kaggle/working/model_checkpoint_epoch_{epoch}.pth')
-  # torch.cuda.empty_cache()
 
 # save the loss_histories
 np.save('/kaggle/working/loss_histories.npy', loss_histories)

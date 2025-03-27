@@ -77,7 +77,8 @@ class SLR_Network(  nn.Module):
         out_lstm = self.BiLSTM(feat, [out_conv["feat_len"]])
         output = self.classifier(out_lstm["predictions"])
         # decode = self.decoder.decode_logits(output["sequence_logits"].squeeze().cpu().detach().numpy())
-        logit_logprob = output.view(-1, self.num_classes).log_softmax(-1).squeeze().cpu().detach().numpy() 
+        # decode  
+        logit_logprob = output.log_softmax(-1).permute(1, 0, 2).cpu().detach().numpy() 
         if np.isnan(logit_logprob).any() or np.isinf(logit_logprob).any():
             decode = None
         else:

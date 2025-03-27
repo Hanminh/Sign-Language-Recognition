@@ -11,4 +11,4 @@ class CTCDecoder(object):
         self.decoder = build_ctcdecoder(self.id2gloss)
     
     def decode_logits(self, logits):
-        return self.decoder.decode(logits, self.beam_size)
+        return self.decoder.decode_batch(None, logits, self.beam_size)
