@@ -2,31 +2,24 @@ from Generate_Data import data_augmentation
 from Generate_Data.data_augmentation import *
 import os
 import cv2
-import sys
-import pdb
-import six
-import glob
-import time
 import torch
-import random
-import pandas
-import warnings
 import numpy as np
 import pyarrow as pa
 import pandas as pd
-from PIL import Image
 import torch.utils.data as data
 import matplotlib.pyplot as plt
 from torch.utils.data.sampler import Sampler
-import pickle
 import ast
 from dotenv import load_dotenv
 load_dotenv()
-
-ROOT = os.getenv("VN_SAVE_PATH")
+import os
+FEATURE_PATH = os.getenv("FEATURE_PATH")
+INFORMATION_PATH = os.getenv("INFORMATION_PATH")
+FEATURE_PATH = os.getenv("FEATURE_PATH")
+MODEL_SAVE_PATH = os.getenv("MODEL_SAVE_PATH")
 
 class VideoDataset(data.Dataset):
-    def __init__(self,  drop_ratio=1, image_scale= 1.0, kernel_size= [('K', 5), ('P', 2),('K', 5), ('P', 2)], input_size= 224, mode= 'train', data_type= 'video', feature_folder= None, infor_folder= None, transform_mode= False):
+    def __init__(self,  drop_ratio=1, image_scale= 1.0, kernel_size= [('K', 5), ('P', 2),('K', 5), ('P', 2)], input_size= 224, mode= 'train', data_type= 'video', feature_folder= None, infor_folder= None, transform_mode= False, id2gloss= None, gloss2id= None):
         self.mode= mode
         self.transform_mode= transform_mode
         self.image_scale= image_scale
@@ -40,12 +33,13 @@ class VideoDataset(data.Dataset):
         # load the pickle file
         #using for Kaggle notebook
         if self.infor_folder:
-            self.inputs_list = pd.read_csv(f'{infor_folder}/vn_data.csv')
+            self.inputs_list = pd.read_csv(f'{infor_folder}/vn_data_{mode}.csv')
         else :
-            self.inputs_list= pd.read_csv('Information_dict/vn_data.csv') 
+            self.inputs_list= pd.read_csv(f'{INFORMATION_PATH}/vn_data_{mode}.csv') 
         self.inputs_list['keys'] = self.inputs_list['keys'].apply(ast.literal_eval)
         self.inputs_list['id'] = self.inputs_list['id'].apply(ast.literal_eval)
-        
+        self.id2gloss= id2gloss
+        self.gloss2id= gloss2id
         self.data_aug = self.transform()
         
     def __getitem__(self, index):
@@ -69,31 +63,40 @@ class VideoDataset(data.Dataset):
         if self.feature_folder:
             img_folders = [self.feature_folder + f'/{id}' for id in ids]
         else :
-            img_folders = [ROOT + f'\\{id}' for id in ids]
+            img_folders = [FEATURE_PATH + f'\\{id}' for id in ids]
         # print(img_folder)
         # print(sent, keys, ids)
         # print(img_folders)
         img_list = []
         for folder in img_folders:
+                # print(folder)
                 img_paths = os.listdir(folder)
+                # sort the image paths by name
+                img_paths.sort()
+                # print(img_paths)
                 for path in img_paths:
                     if self.feature_folder:
                         img_list.append(f'{folder}/{path}')
                     else:
                         img_list.append(f'{folder}\\{path}')
 
-        label_list = [int(id) for id in ids]
+        # label_list = [int(id) for id in ids]
+        label_list = []
+        # convert from id of folder to id of gloss 
+        for id in ids:
+            word = self.id2gloss[id]
+            label_list.append(self.gloss2id[word])
         
         data = [cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB) for img_path in img_list] 
         # convert data to numpy array
         data = np.array(data)
         return data, label_list, sent, data.shape[1]
     
-    def read_feature(self, index):
-        # load file info
-        file_info = self.inputs_list[index]
-        data = np.load(f'features\\{self.mode}\\{file_info["fileid"]}.npy', allow_pickle= True)
-        return data['features'], data['label']
+    # def read_feature(self, index):
+    #     # load file info
+    #     file_info = self.inputs_list[index]
+    #     data = np.load(f'features\\{self.mode}\\{file_info["fileid"]}.npy', allow_pickle= True)
+    #     return data['features'], data['label']
     
     def normalize(self, video, label, file_id= None):
         video, label = self.data_aug(video, label, file_id)
@@ -104,7 +107,7 @@ class VideoDataset(data.Dataset):
         if self.transform_mode:
             print("Apply training transform")
             return data_augmentation.Compose([
-                # video_augmentation.CenterCrop(224),
+                # data_augmentation.CenterCrop(224),
                 # video_augmentation.WERAugment('/lustre/wangtao/current_exp/exp/baseline/boundary.npy'),
                 data_augmentation.RandomCrop(self.input_size),
                 data_augmentation.RandomHorizontalFlip(0.5),

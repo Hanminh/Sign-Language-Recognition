@@ -18,12 +18,13 @@ class Identity(nn.Module):
         return x
 
 class SLR_Network(  nn.Module):
-    def __init__(self, hidden_size= 1024, kernel_size=5,  num_classes= 1000, dictionary= None, T = 1., beam_size= 10):
+    def __init__(self, hidden_size= 1024, kernel_size=5,  num_classes= 1000, dictionary= None, T = 1., beam_size= 50, conv_type =2 ):
         super(SLR_Network, self).__init__()
         self.hidden_size = hidden_size
         self.num_classes = num_classes
         self.kernel_size = kernel_size
         self.T = T
+        self.conv_type = conv_type
         self.decoder = CTCDecoder(
             dictionary, 
             num_classes,
@@ -50,11 +51,11 @@ class SLR_Network(  nn.Module):
             input_size= 512,
             hidden_size= self.hidden_size,
             num_classes= self.num_classes,
-            conv_type= 2
+            conv_type= self.conv_type
         ) 
         
         self.classifier = nn.Linear(self.hidden_size, self.num_classes)
-        self.ctc_loss = nn.CTCLoss(blank= 0, zero_infinity= True)
+        self.ctc_loss = torch.nn.CTCLoss(blank= 0, reduction= 'mean')
         self.distillation_loss = SeqKD(T= self.T)
         
     # def calculate_wer(pred, true):
@@ -64,6 +65,8 @@ class SLR_Network(  nn.Module):
     #     return wer_score
        
     def forward(self, feat, vid_len):
+        if torch.isnan(feat).any() or torch.isinf(feat).any():
+            print("Dữ liệu đầu vào có NaN hoặc Inf!")
         batch, temp, channel, height, width = feat.shape
         feat = feat.permute(0, 2, 1, 3, 4) # Shape: (batch, channels, T, H, W)
         feat = self.CorrNet(feat)
@@ -77,8 +80,7 @@ class SLR_Network(  nn.Module):
         out_lstm = self.BiLSTM(feat, [out_conv["feat_len"]])
         output = self.classifier(out_lstm["predictions"])
         # decode = self.decoder.decode_logits(output["sequence_logits"].squeeze().cpu().detach().numpy())
-        # decode  
-        logit_logprob = output.log_softmax(-1).permute(1, 0, 2).cpu().detach().numpy() 
+        logit_logprob = output.permute(1, 0, 2).log_softmax(-1).cpu().detach().numpy() 
         if np.isnan(logit_logprob).any() or np.isinf(logit_logprob).any():
             decode = None
         else:
@@ -93,36 +95,61 @@ class SLR_Network(  nn.Module):
         }
     
     def get_loss(self, output, input_len, label, label_len):
+        total_loss = {}
         loss = 0 
         # CTC Loss
-        if torch.isnan(output["sequence_logits"]).any() or torch.isinf(output["sequence_logits"]).any():
-            return None
-        loss += self.ctc_loss(
+        # if torch.isnan(output["sequence_logits"]).any() or torch.isinf(output["sequence_logits"]).any():
+        #     return None
+        # # Distillation Loss
+        # if torch.isnan(output["conv_logits"]).any() or torch.isinf(output["conv_logits"]).any():
+        #     return None
+        assert (input_len >= label_len).all()
+        if (input_len <= 0).any() or (label_len <= 0).any():
+            print("input_lengths hoặc target_lengths có giá trị <= 0!")
+            print(label)
+            print(label_len)
+            print(input_len)
+        if torch.isnan(input_len).any() or torch.isnan(label_len).any():
+            print("NaN xuất hiện trong input_lengths hoặc target_lengths!")
+            print(label)
+            print(label_len)
+            print(input_len)
+
+        if torch.isnan(output['conv_logits']).any() or torch.isnan(output["sequence_logits"]).any():
+            print("NaN detected in prediction_logits before log_softmax!")
+            print(label)
+            torch.save(output, '/home/guest/Minh_20210605/Model_VN/debug_data_1.pt')
+
+
+        if torch.isinf(output['conv_logits']).any() or torch.isinf(output["sequence_logits"]).any():
+            print("Inf detected in prediction_logits before log_softmax!")
+            print(label)
+            torch.save(output, '/home/guest/Minh_20210605/Model_VN/debug_data_1.pt')
+
+        total_loss['Seq'] = self.ctc_loss(
             output["sequence_logits"].log_softmax(-1),
             label,
             input_len,
             label_len
         ).mean()
         
-        # Distillation Loss
-        if torch.isnan(output["conv_logits"]).any() or torch.isinf(output["conv_logits"]).any():
-            return None
-        loss += 25 * self.distillation_loss(
+        total_loss['Dist'] = 25 * self.distillation_loss(
             output["conv_logits"].permute(2, 0, 1),
             output["sequence_logits"].detach()
         )
         
         
-        loss += self.ctc_loss(
+        total_loss['Conv'] = self.ctc_loss(
             output["conv_logits"].permute(2, 0, 1).log_softmax(-1),
             label,
             input_len,
             label_len
         ).mean()
-        
+
+        loss += total_loss['Seq']
+        loss += total_loss['Conv']
+        loss += total_loss['Dist']
         loss += 0.0005 * (output["loss_update_lift"] + output["loss_pred_lift"])
         
         return loss
-        
-        
         

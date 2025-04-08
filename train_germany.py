@@ -18,7 +18,11 @@ from argument import *
 import gc
 from tqdm import tqdm
 import os
+from dotenv import load_dotenv
+load_dotenv()
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
+INFORMATION_PATH = os.getenv("INFORMATION_PATH")
 
 def encode_text(sample):
     encode_text = torch.tensor([])
@@ -33,7 +37,7 @@ def encode_text(sample):
 # get the gloss_dict
 prefix = os.getenv("DATA_PATH")
 # prepare the gloss dictionary
-gloss_dict = np.load('Information_dict/gloss_dict.npy', allow_pickle= True)
+gloss_dict = np.load(f'{INFORMATION_PATH}/gloss_dict.npy', allow_pickle= True)
 gloss_dict = gloss_dict.item()
 id2gloss = []
 id2gloss.append('<blank>')
@@ -70,11 +74,11 @@ dataloader = torch.utils.data.DataLoader(
 # Prepare the model
 model = SLR_Network(num_classes= len(id2gloss) + 1, dictionary= dictionary)
 model.to('cuda')
-# criterion = CTCLoss(blank= 0, zero_infinity= True)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay= 0.0001)
 scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones= [40, 60], gamma= 1/5)
 scaler = GradScaler()
 
+# criterion = CTCLoss(blank= 0, zero_infinity= True)
 # checkpoint = torch.load('/home/guest/Minh_20210605/Sign-Language-Recognition/Model/model_checkpoint_epoch_40.pth')
 # model.load_state_dict(checkpoint['model_state_dict'], strict= False)
 # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -85,7 +89,7 @@ wer_histories = []
 torch.cuda.empty_cache()
 
 model.train()
-for epoch in range(41, 80):
+for epoch in range(0, 101):
   
   running_loss = 0.0
   wer = 0.0

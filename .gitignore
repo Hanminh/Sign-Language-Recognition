@@ -37,3 +37,15 @@ model_checkpoint_epoch_1.pth
 model_checkpoint_epoch_9.pth
 00693_bạn gái.mp4
 final_model.pth
+test_grad_cam_vn.ipynb
+Preprocess/crawl_data_vn.ipynb
+Model_VN/model_checkpoint_epoch_70.pth
+model_checkpoint_epoch_69.pth
+test_read_video.ipynb
+DataDebug/model_checkpoint_epoch_50.pth
+DataDebug/model_checkpoint_epoch_60.pth
+DataDebug/model_checkpoint_epoch_80.pth
+DataDebug/model_checkpoint_epoch_100.pth
+test_model_single_vid.ipynb
+000000_nhìn.mp4
+test.ipynb
