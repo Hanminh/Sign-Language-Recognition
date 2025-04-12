@@ -52,7 +52,7 @@ def load_video(path= VIDEO_PATH):
     return np.array(frames)
 
 # prepare data for model
-def prepare_data(video, kernel_size= [('K', 5), ('P', 4),('K', 5), ('P', 2)]):
+def prepare_data(video, kernel_sizes= [('K', 5), ('P', 4),('K', 5), ('P', 2)]):
     data_aug = data_augmentation.Compose([
         data_augmentation.CenterCrop((224, 224)),
         data_augmentation.Resize(1),
@@ -64,7 +64,7 @@ def prepare_data(video, kernel_size= [('K', 5), ('P', 4),('K', 5), ('P', 2)]):
     left_pad = 0
     last_stride = 1
     total_stride = 1
-    kernel_sizes = ['K5', "P4", 'K5', "P2"]
+    # kernel_sizes = ['K5', "P4", 'K5', "P2"]
     for layer_idx, ks in enumerate(kernel_sizes):
         if ks[0] == 'K':
             left_pad = left_pad * last_stride 

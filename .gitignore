@@ -49,3 +49,7 @@ DataDebug/model_checkpoint_epoch_100.pth
 test_model_single_vid.ipynb
 000000_nhìn.mp4
 test.ipynb
+VN_2048_1Loss/model_checkpoint_epoch_100.pth
+VN_2048_3Loss/Checkpoint/model_checkpoint_epoch_80.pth
+.gitignore
+VN_2048_3Loss/Checkpoint/model_checkpoint_epoch_100.pth
