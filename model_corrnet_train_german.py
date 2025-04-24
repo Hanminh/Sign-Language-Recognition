@@ -10,7 +10,7 @@ import torch
 from Modules import BiLSTM
 from Modules.BiLSTM import BiLSTM
 from Modules.attention_corrnet import ResNet, BasicBlock
-from slr_network import SLR_Network
+from model_corrnet_slr import SLR_Network
 from torch.nn import CTCLoss
 from torch.cuda.amp import autocast, GradScaler
 import torch.optim as optim
@@ -63,7 +63,7 @@ def calculate_wer(pred, true):
 dataset = data_loader.VideoDataset(prefix= prefix, gloss_dict= gloss_dict, kernel_size= [('K', 5), ('P', 2),('K', 5), ('P', 2)], mode= 'train', frame_interval= 1)
 dataloader = torch.utils.data.DataLoader(
         dataset=dataset,
-        batch_size=2,
+        batch_size=1,
         shuffle=True,
         drop_last=True,
         num_workers=0,
@@ -118,7 +118,7 @@ for epoch in range(0, 101):
       # loss = model.get_loss(output, input_lengths, sample[2], target_lengths)
       running_loss += loss.item()
       with torch.no_grad():
-        for i in range(2):
+        for i in range(1):
           wer += calculate_wer(output["predictions"][i], sample[-1][i])
       
       # Backward and optimize

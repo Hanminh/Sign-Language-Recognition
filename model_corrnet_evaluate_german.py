@@ -10,7 +10,7 @@ import torch
 from Modules import BiLSTM
 from Modules.BiLSTM import BiLSTM
 from Modules.attention_corrnet import ResNet, BasicBlock
-from slr_network import SLR_Network
+from model_corrnet_slr import SLR_Network
 from torch.nn import CTCLoss
 from torch.cuda.amp import autocast, GradScaler
 import torch.optim as optim

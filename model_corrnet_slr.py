@@ -1,7 +1,7 @@
 import torch.nn as nn
 import torch.nn.functional as F
 from Modules.BiLSTM import BiLSTM
-from Modules.Convolution1D import Convolution1D
+from Modules.Convolution1D import TemporalConv
 from Modules.attention_corrnet import BasicBlock, conv3x3, Get_Correlation, ResNet, pretrain_resnet18
 from Modules.Loss import SeqKD
 from Modules.CTCDecoder import CTCDecoder

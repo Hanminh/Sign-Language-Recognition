@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class Convolution1D(nn.Module):
+class TemporalConv(nn.Module):
     def __init__(self, input_size, hidden_size, conv_type= 2, batch_norm= False, num_classes= -1, kernel_size= 5):
-        super(Convolution1D, self).__init__()
+        super(TemporalConv, self).__init__()
         self.batch_norm = batch_norm
         self.input_size = input_size
         self.hidden_size = hidden_size

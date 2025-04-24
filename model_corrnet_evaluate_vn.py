@@ -10,11 +10,11 @@ import torch
 from Modules import BiLSTM
 from Modules.BiLSTM import BiLSTM
 from Modules.attention_corrnet import ResNet, BasicBlock
-from slr_network import SLR_Network
+from model_corrnet_slr import SLR_Network
 from torch.nn import CTCLoss
 from torch.cuda.amp import autocast, GradScaler
 import torch.optim as optim
-from argument import BATCHSIZE_EVAL, USE_GPU_EVAL, HIDDEN_SIZE, CONV_TYPE
+from argument import BATCHSIZE_EVAL, USE_GPU_EVAL, HIDDEN_SIZE_CORRNET, CONV_TYPE_CORRNET
 from tqdm import tqdm
 from dotenv import load_dotenv
 load_dotenv()

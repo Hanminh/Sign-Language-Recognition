@@ -10,11 +10,11 @@ import torch
 from Modules import BiLSTM
 from Modules.BiLSTM import BiLSTM
 from Modules.attention_corrnet import ResNet, BasicBlock
-from slr_network import SLR_Network
+from model_slowfast_slr import SLRModel
 from torch.nn import CTCLoss
 from torch.cuda.amp import autocast, GradScaler
 import torch.optim as optim
-from argument import BATCHSIZE_TRAIN, HIDDEN_SIZE, GAMMA, EPOCH, CONV_TYPE, REGULARIZATION
+from argument import BATCHSIZE_TRAIN, HIDDEN_SIZE_SLOWFAST, GAMMA, EPOCH, CONV_TYPE_SLOWFAST, REGULARIZATION
 import gc
 from tqdm import tqdm
 from dotenv import load_dotenv
@@ -58,7 +58,7 @@ dataset_train = data_loader_vn.VideoDataset(id2gloss=vn_id2gloss, gloss2id=vn_gl
 
 dataloader_train = torch.utils.data.DataLoader(
     dataset_train, 
-    batch_size= BATCHSIZE_TRAIN, 
+    batch_size= 1, 
     shuffle=False, 
     num_workers=0, 
     collate_fn=dataset_train.collate_fn,
@@ -76,9 +76,18 @@ dataloader_dev = torch.utils.data.DataLoader(
     collate_fn=dataset_dev.collate_fn,
     drop_last= True)
 
-
 # Prepare the model
-model = SLR_Network(num_classes= len(dictionary) + 1, dictionary= dictionary, conv_type= CONV_TYPE, hidden_size= HIDDEN_SIZE)
+model = SLRModel(
+    num_classes= len(dictionary) + 1, 
+    conv_type= CONV_TYPE_SLOWFAST,
+    c2d_type= 'slowfast101', 
+    load_pkl= False, 
+    slowfast_config= 'SLOWFAST_64x2_R101_50_50.yaml', 
+    dictionary= dictionary,
+    weight_norm= False,
+    hidden_size= HIDDEN_SIZE_SLOWFAST
+    )
+
 model.to('cuda')
 # criterion = CTCLoss(blank= 0, zero_infinity= True)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay= REGULARIZATION) 

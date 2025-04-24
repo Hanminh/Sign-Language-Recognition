@@ -53,3 +53,9 @@ VN_2048_1Loss/model_checkpoint_epoch_100.pth
 VN_2048_3Loss/Checkpoint/model_checkpoint_epoch_80.pth
 .gitignore
 VN_2048_3Loss/Checkpoint/model_checkpoint_epoch_100.pth
+*.mp4
+*.npy
+*.png
+*.pth
+*.ipynb
+*.txt
