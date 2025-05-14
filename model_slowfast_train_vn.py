@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 # from Modules import *
 from Generate_Data.data_augmentation import *
-import data_loader_vn
+import data_loader_vn_wacv
 import os
 import torch
 from Modules import BiLSTM
@@ -52,7 +52,7 @@ for i in list(vn_dictionary.keys()):
 
 vn_gloss2id = np.load(f'{INFORMATION_PATH}/vn_gloss2id.npy', allow_pickle=True).item()
 
-dataset_train = data_loader_vn.VideoDataset(id2gloss=vn_id2gloss, gloss2id=vn_gloss2id,
+dataset_train = data_loader_vn_wacv.VideoDataset(id2gloss=vn_id2gloss, gloss2id=vn_gloss2id,
                                       kernel_size= [('K', 5), ('P', 4),('K', 5), ('P', 2)], mode= 'train', transform_mode= True, feature_folder= FEATURE_PATH,
                                       infor_folder= INFORMATION_PATH)
 
@@ -64,7 +64,7 @@ dataloader_train = torch.utils.data.DataLoader(
     collate_fn=dataset_train.collate_fn,
     drop_last= True)
 
-dataset_dev = data_loader_vn.VideoDataset(id2gloss=vn_id2gloss, gloss2id=vn_gloss2id,
+dataset_dev = data_loader_vn_wacv.VideoDataset(id2gloss=vn_id2gloss, gloss2id=vn_gloss2id,
                                       kernel_size= [('K', 5), ('P', 4),('K', 5), ('P', 2)], mode= 'dev', transform_mode= False, feature_folder= FEATURE_PATH,
                                       infor_folder= INFORMATION_PATH)
 

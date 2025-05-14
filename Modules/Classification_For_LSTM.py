@@ -72,4 +72,52 @@ class BiLSTM(nn.Module):
             
         return hidden
     
-    
+
+
+class BiLSTMClassifier(nn.Module):
+    def __init__(self, input_size, hidden_size=512, num_layers=1, dropout=0.3, 
+                 bidirectional=True, rnn_type="LSTM", num_classes=2, debug=False):
+        super(BiLSTMClassifier, self).__init__()
+        
+        # Initialize the BiLSTM
+        self.bilstm = BiLSTM(
+            input_size=input_size,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            dropout=dropout,
+            bidirectional=bidirectional,
+            rnn_type=rnn_type,
+            num_classes=num_classes,
+            debug=debug
+        )
+        
+        # Calculate the input size for the classification layer
+        self.hidden_size = hidden_size
+        self.num_directions = 2 if bidirectional else 1
+        self.classifier_input_size = hidden_size * self.num_directions
+        
+        # Classification layer
+        self.fc = nn.Linear(self.classifier_input_size, num_classes)
+        self.dropout = nn.Dropout(dropout)
+        
+    def forward(self, src_feats, src_lens, hidden=None):
+        
+        # Get BiLSTM outputs
+        bilstm_output = self.bilstm(src_feats, src_lens, hidden)
+        
+        # Extract the hidden state
+        hidden = bilstm_output["hidden"]  # (num_layers * num_directions, batch_size, hidden_size)
+
+        last_hidden = hidden[-1]  # (batch_size, hidden_size * num_directions)
+        
+        # last_hidden = self.dropout(last_hidden)
+        logits = self.fc(last_hidden)  # (batch_size, num_classes)
+        
+        # Optionally apply softmax (uncomment if needed, typically not used with CrossEntropyLoss)
+        # probs = F.softmax(logits, dim=-1)
+        
+        return {
+            "logits": logits,
+            "hidden": hidden,
+            "predictions": bilstm_output["predictions"]  # Include sequence outputs if needed
+        }

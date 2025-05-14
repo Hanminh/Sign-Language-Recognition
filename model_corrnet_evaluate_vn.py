@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 # from Modules import *
 from Generate_Data.data_augmentation import *
+import data_loader_vn_id
 import data_loader_vn
 import os
 import torch
@@ -14,7 +15,7 @@ from model_corrnet_slr import SLR_Network
 from torch.nn import CTCLoss
 from torch.cuda.amp import autocast, GradScaler
 import torch.optim as optim
-from argument import BATCHSIZE_EVAL, USE_GPU_EVAL, HIDDEN_SIZE_CORRNET, CONV_TYPE_CORRNET
+from argument import BATCHSIZE_EVAL, USE_GPU_EVAL, HIDDEN_SIZE_CORRNET, CONV_TYPE_CORRNET_CNN_IMPROVE, CONV_TYPE_CORRNET_CNN_NORMAL
 from tqdm import tqdm
 from dotenv import load_dotenv
 load_dotenv()
@@ -47,8 +48,13 @@ vn_id2gloss = np.load(f'{INFORMATION_PATH}/vn_id2gloss.npy', allow_pickle=True).
 vn_dictionary = np.load(f'{INFORMATION_PATH}/vn_dictionary.npy', allow_pickle=True).item()
 dictionary = []
 dictionary.append(' ')
+dictionary2 = []
+dictionary2.append(' ')
+size = 1
 for i in list(vn_dictionary.keys()):
     dictionary.append(i + '|')
+    dictionary2.append(str(size) +"|")
+    size += 1
 
 vn_gloss2id = np.load(f'{INFORMATION_PATH}/vn_gloss2id.npy', allow_pickle=True).item()
 
@@ -66,9 +72,9 @@ dataloader = torch.utils.data.DataLoader(
     drop_last= True)
 
 # Prepare the model
-model = SLR_Network(num_classes= len(dictionary) + 1, dictionary= dictionary, conv_type= 3, hidden_size= 2048)
+model = SLR_Network(num_classes= len(dictionary2) + 1, dictionary= dictionary, conv_type= CONV_TYPE_CORRNET_CNN_NORMAL, hidden_size= 2048, conv_improve= False)
 # model.to('cuda')
-checkpoint = torch.load('DataDebug/model_checkpoint_epoch_100.pth')
+checkpoint = torch.load('Model/VN_2048_3Loss_Normal1D_CNN/model_checkpoint_epoch_100.pth')
 model.load_state_dict(checkpoint['model_state_dict'], strict= False)
 if USE_GPU_EVAL:
     model = model.to('cuda')
@@ -76,7 +82,7 @@ torch.cuda.empty_cache()
 model.eval()
 wer = 0
 with torch.no_grad():
-    for i, sample in enumerate(dataloader):
+    for i, sample in tqdm(enumerate(dataloader)):
         input_data = sample[0]
         if USE_GPU_EVAL:
             input_data = input_data.to('cuda')
@@ -84,8 +90,8 @@ with torch.no_grad():
         output = model(input_data, vid_len)
         for i in range(BATCHSIZE_EVAL):
             wer += calculate_wer(output['predictions'][i], sample[-1][i])
-            print(f'Pred: {output["predictions"][i]}')
-            print(f'True: {sample[-1][i]}')
+            # print(f'Pred: {output["predictions"][i]}')
+            # print(f'True: {sample[-1][i]}')
 
 print(f'WER: {wer / len(dataloader) / BATCHSIZE_EVAL}')
         

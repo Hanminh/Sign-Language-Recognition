@@ -2,12 +2,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-import data_loader_vn
+import data_loader_vn_wacv
 import torch
 from Modules import BiLSTM
 from Modules.BiLSTM import BiLSTM
 from model_corrnet_slr import SLR_Network
-from argument import BATCHSIZE_EVAL, HIDDEN_SIZE_CORRNET, CONV_TYPE_CORRNET
+from argument import BATCHSIZE_EVAL, HIDDEN_SIZE_CORRNET, CONV_TYPE_CORRNET_CNN_IMPROVE
 from dotenv import load_dotenv
 load_dotenv()
 import os
@@ -28,7 +28,7 @@ for i in list(vn_dictionary.keys()):
     
 # load the model
 def load_model(path= 'DataDebug/model_checkpoint_epoch_100.pth'):
-    model = SLR_Network(num_classes= len(dictionary) + 1, dictionary= dictionary, conv_type= CONV_TYPE_CORRNET, hidden_size= HIDDEN_SIZE_CORRNET)
+    model = SLR_Network(num_classes= len(dictionary) + 1, dictionary= dictionary, conv_type= CONV_TYPE_CORRNET_CNN_IMPROVE, hidden_size= HIDDEN_SIZE_CORRNET)
     checkpoint = torch.load(path)
     model.load_state_dict(checkpoint['model_state_dict'], strict= False)
     return model

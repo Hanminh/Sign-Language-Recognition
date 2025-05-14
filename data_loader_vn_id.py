@@ -82,15 +82,17 @@ class VideoDataset(data.Dataset):
 
         # label_list = [int(id) for id in ids]
         label_list = []
+        sent_id = ''
         # convert from id of folder to id of gloss 
         for id in ids:
             word = self.id2gloss[id]
             label_list.append(self.gloss2id[word])
+            sent_id += str(self.gloss2id[word]) + ' '
         
         data = [cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB) for img_path in img_list] 
         # convert data to numpy array
         data = np.array(data)
-        return data, label_list, sent, data.shape[0]
+        return data, label_list, sent_id, data.shape[0]
     
     # def read_feature(self, index):
     #     # load file info

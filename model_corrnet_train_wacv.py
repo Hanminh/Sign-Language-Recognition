@@ -10,13 +10,14 @@ import torch
 from Modules import BiLSTM
 from Modules.BiLSTM import BiLSTM
 from Modules.attention_corrnet import ResNet, BasicBlock
-from model_corrnet_slr import SLR_Network
+from model_corrnet_slr_wacv_3Loss import SLR_Network
 from torch.nn import CTCLoss
 from torch.cuda.amp import autocast, GradScaler
 import torch.optim as optim
 from argument import BATCHSIZE_TRAIN, HIDDEN_SIZE_CORRNET, GAMMA, EPOCH, CONV_TYPE_CORRNET_CNN_IMPROVE, REGULARIZATION
 import gc
 from tqdm import tqdm
+import jiwer
 from dotenv import load_dotenv
 load_dotenv()
 import os
@@ -34,7 +35,6 @@ def encode_text(sample):
             encode_text = torch.cat((encode_text, torch.tensor([sample[2][i]])))
     return encode_text
 
-import jiwer
 def calculate_wer(pred, true):
     pred_words = pred.split('|')[:-1]
     pred_str = ' '.join(pred_words)
@@ -42,31 +42,21 @@ def calculate_wer(pred, true):
     return wer_score
 
 
-vn_id2gloss = np.load(f'{INFORMATION_PATH}/vn_id2gloss.npy', allow_pickle=True).item()
-
-vn_dictionary = np.load(f'{INFORMATION_PATH}/vn_dictionary.npy', allow_pickle=True).item()
-dictionary = []
-dictionary.append(' ')
-for i in list(vn_dictionary.keys()):
-    dictionary.append(i + '|')
-
-vn_gloss2id = np.load(f'{INFORMATION_PATH}/vn_gloss2id.npy', allow_pickle=True).item()
-
-dataset_train = data_loader_vn_wacv.VideoDataset(id2gloss=vn_id2gloss, gloss2id=vn_gloss2id,
-                                      kernel_size= [('K', 5), ('P', 4),('K', 5), ('P', 2)], mode= 'train', transform_mode= True, feature_folder= FEATURE_PATH,
-                                      infor_folder= INFORMATION_PATH)
+dataset_train = data_loader_vn_wacv.VideoDataset(
+                                            kernel_size= [('K', 5), ('P', 4),('K', 5), ('P', 2)], mode= 'train', transform_mode= False
+                                            )
 
 dataloader_train = torch.utils.data.DataLoader(
     dataset_train, 
     batch_size= BATCHSIZE_TRAIN, 
-    shuffle=False, 
+    shuffle=True, 
     num_workers=0, 
     collate_fn=dataset_train.collate_fn,
     drop_last= True)
 
-dataset_dev = data_loader_vn_wacv.VideoDataset(id2gloss=vn_id2gloss, gloss2id=vn_gloss2id,
-                                      kernel_size= [('K', 5), ('P', 4),('K', 5), ('P', 2)], mode= 'dev', transform_mode= False, feature_folder= FEATURE_PATH,
-                                      infor_folder= INFORMATION_PATH)
+dataset_dev = data_loader_vn_wacv.VideoDataset(
+                                      kernel_size= [('K', 5), ('P', 4),('K', 5), ('P', 2)], mode= 'val', transform_mode= False
+                                      )
 
 dataloader_dev = torch.utils.data.DataLoader(
     dataset_dev, 
@@ -76,9 +66,13 @@ dataloader_dev = torch.utils.data.DataLoader(
     collate_fn=dataset_dev.collate_fn,
     drop_last= True)
 
-
+dictionary = []
+dictionary.append(' ')
+for i in range(199):
+    dictionary.append(str(i) + '|')
+    
 # Prepare the model
-model = SLR_Network(num_classes= len(dictionary) + 1, dictionary= dictionary, conv_type= CONV_TYPE_CORRNET_CNN_IMPROVE, hidden_size= HIDDEN_SIZE_CORRNET)
+model = SLR_Network(num_classes= len(dictionary) - 1, dictionary= dictionary, conv_type= CONV_TYPE_CORRNET_CNN_IMPROVE, hidden_size= HIDDEN_SIZE_CORRNET)
 model.to('cuda')
 # criterion = CTCLoss(blank= 0, zero_infinity= True)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay= REGULARIZATION) 
@@ -101,30 +95,21 @@ for epoch in range(0, EPOCH):
     model.train()
     for i, sample in tqdm(enumerate(dataloader_train)):
         
-        input = sample[0].to('cuda', non_blocking=True)
-        # vid_len = sample[1].to('cuda', non_blocking=True)
-        # targets = sample[2].to('cuda', non_blocking=True)
-        # target_lengths = sample[3].to('cuda', non_blocking=True)
-        vid_len = sample[1]
-        targets = sample[2]
-        target_lengths = sample[3]
+        input = sample['data'].to('cuda', non_blocking=True)
+        vid_len = sample['video_length'].to('cuda', non_blocking=True)
+        targets = sample['label'].to('cuda', non_blocking=True)
+        target_lengths = sample['label_length'].to('cuda', non_blocking=True)
 
         # Forward pass
         with autocast():
             output = model(input, vid_len)
-            input_lengths = torch.full(
-                (output['sequence_logits'].shape[1],), 
-                output['sequence_logits'].shape[0], 
-                dtype=torch.long
-            )
-            target_lengths = sample[3]
-            loss = model.get_loss(output, input_lengths, sample[2], target_lengths)
-        
-        # loss = model.get_loss(output, input_lengths, sample[2], target_lengths)
+
+            loss = model.get_loss(output, targets)
+            for i in range(BATCHSIZE_TRAIN):
+                if output['predicted_class'][i] == targets[i]:
+                    wer_train += 1
+            
         running_loss_train += loss.item()
-        with torch.no_grad():
-            for i in range(1):
-                wer_train += calculate_wer(output["predictions"][i], sample[-1][i])
         
         # Backward and optimize
         optimizer.zero_grad()
@@ -134,11 +119,9 @@ for epoch in range(0, EPOCH):
         scaler.step(optimizer)
         scaler.update()
 
-        #update learning rate 
-        scheduler.step()
 
         loss.detach()
-        del loss, input, output, vid_len
+        del loss, input, output, vid_len, targets, target_lengths
         gc.collect()
         torch.cuda.empty_cache()
     epoch_loss = running_loss_train / len(dataloader_train)
@@ -146,32 +129,27 @@ for epoch in range(0, EPOCH):
     loss_histories_train.append(epoch_loss)
     wer_histories_train.append(wer_train)
     
+    #update learning rate 
+    scheduler.step()
     # dev 
     model.eval()
     with torch.no_grad():
         for i, sample in tqdm(enumerate(dataloader_dev)):
-            input = sample[0].to('cuda', non_blocking=True)
-            # vid_len = sample[1].to('cuda', non_blocking=True)
-            # targets = sample[2].to('cuda', non_blocking=True)
-            # target_lengths = sample[3].to('cuda', non_blocking=True)
-            vid_len = sample[1]
-            targets = sample[2]
-            target_lengths = sample[3]
+            input = sample['data'].to('cuda', non_blocking=True)
+            vid_len = sample['video_length'].to('cuda', non_blocking=True)
+            targets = sample['label'].to('cuda', non_blocking=True)
+            target_lengths = sample['label_length'].to('cuda', non_blocking=True)
 
             output = model(input, vid_len)
-            input_lengths = torch.full(
-                (output['sequence_logits'].shape[1],), 
-                output['sequence_logits'].shape[0], 
-                dtype=torch.long
-            )
-            target_lengths = sample[3]
-            loss = model.get_loss(output, input_lengths, sample[2], target_lengths)
-
-            running_loss_dev += loss.item()
-            for i in range(1):
-                wer_dev += calculate_wer(output["predictions"][i], sample[-1][i])
+            loss = model.get_loss(output, targets)
+            for i in range(BATCHSIZE_TRAIN):
+                if output['predicted_class'][i] == targets[i]:
+                    wer_dev += 1
             
-            del loss, input, output, vid_len
+            running_loss_dev += loss.item()
+            del loss, input, output, vid_len, targets, target_lengths
+            
+            
     
     running_loss_dev = running_loss_dev / len(dataloader_dev)
     wer_dev = wer_dev / len(dataloader_dev)
@@ -202,5 +180,3 @@ np.save(f'{MODEL_SAVE_PATH}/loss_histories.npy', loss_histories_train)
 np.save(f'{MODEL_SAVE_PATH}/wer_histories.npy', wer_histories_train)
 np.save(f'{MODEL_SAVE_PATH}/loss_histories_dev.npy', loss_histories_dev)
 np.save(f'{MODEL_SAVE_PATH}/wer_histories_dev.npy', wer_histories_dev)
-# save the model
-torch.save(model.state_dict(), f'{MODEL_SAVE_PATH}/Model_VN/model.pth')

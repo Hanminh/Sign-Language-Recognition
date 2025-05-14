@@ -13,13 +13,12 @@ import ast
 from dotenv import load_dotenv
 load_dotenv()
 import os
-FEATURE_PATH = os.getenv("FEATURE_PATH")
-INFORMATION_PATH = os.getenv("INFORMATION_PATH")
-FEATURE_PATH = os.getenv("FEATURE_PATH")
-MODEL_SAVE_PATH = os.getenv("MODEL_SAVE_PATH")
+FEATURE_PATH = os.getenv("VN_SINGLE_WORD_SAVE_PATH")
+ROOT_PATH = os.getenv('VN_SINGLE_WORD_DATA_PATH')
+
 
 class VideoDataset(data.Dataset):
-    def __init__(self,  drop_ratio=1, image_scale= 1.0, kernel_size= [('K', 5), ('P', 2),('K', 5), ('P', 2)], input_size= 224, mode= 'train', data_type= 'video', feature_folder= None, infor_folder= None, transform_mode= False, id2gloss= None, gloss2id= None):
+    def __init__(self,  drop_ratio=1, image_scale= 1.0, kernel_size= [('K', 5), ('P', 2),('K', 5), ('P', 2)], input_size= 224, mode= 'train', data_type= '1_200', feature_folder= None, infor_folder= None, transform_mode= False):
         self.mode= mode
         self.transform_mode= transform_mode
         self.image_scale= image_scale
@@ -31,42 +30,39 @@ class VideoDataset(data.Dataset):
         self.drop_ratio= drop_ratio
         self.infor_folder= infor_folder
         # load the pickle file
+        
         #using for Kaggle notebook
         if self.infor_folder:
-            self.inputs_list = pd.read_csv(f'{infor_folder}/vn_data_{mode}.csv')
+            self.inputs_list = pd.read_csv(f'{infor_folder}/label_{data_type}/{mode}_{data_type}_center_ord1.csv')
+        # using for local machine
         else :
-            self.inputs_list= pd.read_csv(f'{INFORMATION_PATH}/vn_data_{mode}.csv') 
-        self.inputs_list['keys'] = self.inputs_list['keys'].apply(ast.literal_eval)
-        self.inputs_list['id'] = self.inputs_list['id'].apply(ast.literal_eval)
-        self.id2gloss= id2gloss
-        self.gloss2id= gloss2id
+            self.inputs_list= pd.read_csv(f'{ROOT_PATH}/label_{data_type}/{mode}_{data_type}_center_ord1.csv') 
+        # self.id2gloss= id2gloss
+        # self.gloss2id= gloss2id
         self.data_aug = self.transform()
         
     def __getitem__(self, index):
-        if self.data_type == 'video':
-            input_data, label, sent, vid_len = self.read_video(index)
-            input_data, label = self.normalize(input_data, label, sent)
-            # return {
-            #     'video': input_data,
-            #     'label': torch.LongTensor(label),
-            #     'info': sent,
-            #     'vid_len': vid_len
-            # }
-            return input_data, torch.LongTensor(label), sent, vid_len
+        input_data, label, vid_len , info= self.read_video(index)
+        input_data, label = self.normalize(input_data, label)
+        # return {
+        #     'video': input_data,
+        #     'label': torch.LongTensor(label),
+        #     'info': sent,
+        #     'vid_len': vid_len
+        # }
+        return input_data, torch.LongTensor(label), vid_len, str(info[0])
         # elif self.data_type == 'feature':
         #     input_data, label = self.read_feature(index)
         #     return input_data, torch.tensor([label]), self.inputs_list[index]['label'], vid_len
     
     def read_video(self, index):
         # load file info
-        sent, keys, ids = self.inputs_list.loc[index]
-        if self.feature_folder:
-            img_folders = [self.feature_folder + f'/{id}' for id in ids]
-        else :
-            img_folders = [FEATURE_PATH + f'\\{id}' for id in ids]
-        # print(img_folder)
-        # print(sent, keys, ids)
-        # print(img_folders)
+        name, label, vid_label_id = self.inputs_list.iloc[index]
+        name = name.split('.')[0]
+        if self.feature_folder is None:
+            img_folders = [f'{FEATURE_PATH}/{name}']
+        else:
+            img_folders = [f'{self.feature_folder}/{name}']
         img_list = []
         for folder in img_folders:
                 # print(folder)
@@ -78,19 +74,18 @@ class VideoDataset(data.Dataset):
                     if self.feature_folder:
                         img_list.append(f'{folder}/{path}')
                     else:
-                        img_list.append(f'{folder}\\{path}')
+                        img_list.append(f'{folder}/{path}')
 
         # label_list = [int(id) for id in ids]
         label_list = []
         # convert from id of folder to id of gloss 
-        for id in ids:
-            word = self.id2gloss[id]
-            label_list.append(self.gloss2id[word])
-        
+        label_list.append(label + 1)
+        # print(img_list[0])
+        # print(name)
         data = [cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB) for img_path in img_list] 
         # convert data to numpy array
         data = np.array(data)
-        return data, label_list, sent, data.shape[0]
+        return data, label_list, data.shape[0], [label]
     
     # def read_feature(self, index):
     #     # load file info
@@ -124,8 +119,9 @@ class VideoDataset(data.Dataset):
             
     @staticmethod
     def collate_fn(batch):
+        # print(batch)
         batch = [item for item in sorted(batch, key=lambda x: len(x[0]), reverse=True)]
-        video, label, info, vid_len = list(zip(*batch))
+        video, label, vid_len, info = list(zip(*batch))
         left_pad = 0
         last_stride = 1
         total_stride = 1
@@ -166,7 +162,7 @@ class VideoDataset(data.Dataset):
             padded_video = torch.stack(padded_video).permute(0, 2, 1)
         label_length = torch.LongTensor([len(lab) for lab in label])
         if max(label_length) == 0:
-            return padded_video, video_length, [], [], info
+            return padded_video, video_length, [], []
         else:
             padded_label = []
             for lab in label:
@@ -174,7 +170,15 @@ class VideoDataset(data.Dataset):
             padded_label = torch.LongTensor(padded_label)
             # print the shape of video before and after padded
             # print(f'video shape: {video[0].shape} -> {padded_video.shape}')
-            return padded_video, video_length, padded_label, label_length, info
+            # return padded_video, video_length, padded_label, label_length
+            return {
+                'data': padded_video,
+                'video_length': video_length,
+                'label': padded_label,
+                'label_length': label_length,
+                'sentence': info
+            }
+            
 
     def __len__(self):
         return len(self.inputs_list) - 1

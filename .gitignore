@@ -59,3 +59,5 @@ VN_2048_3Loss/Checkpoint/model_checkpoint_epoch_100.pth
 *.pth
 *.ipynb
 *.txt
+*.csv
+*.env

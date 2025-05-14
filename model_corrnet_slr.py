@@ -5,7 +5,8 @@ from Modules.Convolution1D import TemporalConv
 from Modules.attention_corrnet import BasicBlock, conv3x3, Get_Correlation, ResNet, pretrain_resnet18
 from Modules.Loss import SeqKD
 from Modules.CTCDecoder import CTCDecoder
-from Modules.temporal_lifting_pool import TemporalConv
+from Modules.temporal_lifting_pool import TemporalConv as T1
+from Modules.temporal_conv import TemporalConv as T2
 import numpy as np
 import torch
 import jiwer
@@ -18,13 +19,14 @@ class Identity(nn.Module):
         return x
 
 class SLR_Network(  nn.Module):
-    def __init__(self, hidden_size= 1024, kernel_size=5,  num_classes= 1000, dictionary= None, T = 1., beam_size= 50, conv_type =2 ):
+    def __init__(self, hidden_size= 1024, kernel_size=5,  num_classes= 1000, dictionary= None, T = 1., beam_size= 50, conv_type =9, conv_improve= False, rnn_type= "LSTM" ):
         super(SLR_Network, self).__init__()
         self.hidden_size = hidden_size
         self.num_classes = num_classes
         self.kernel_size = kernel_size
         self.T = T
         self.conv_type = conv_type
+        self.conv_improve = conv_improve
         self.decoder = CTCDecoder(
             dictionary, 
             num_classes,
@@ -36,7 +38,8 @@ class SLR_Network(  nn.Module):
             hidden_size= self.hidden_size // 2,
             num_classes= self.num_classes, 
             num_layers= 2,
-            bidirectional= True)
+            bidirectional= True,
+            rnn_type= rnn_type)
         
         self.CorrNet = pretrain_resnet18()
         self.CorrNet.fc = Identity()
@@ -46,13 +49,20 @@ class SLR_Network(  nn.Module):
         #     num_classes= self.num_classes,
         #     kernel_size= self.kernel_size
         # )
-        
-        self.Temporal_Conv = TemporalConv(
-            input_size= 512,
-            hidden_size= self.hidden_size,
-            num_classes= self.num_classes,
-            conv_type= self.conv_type
-        ) 
+        if self.conv_improve:
+            self.Temporal_Conv = T1(
+                input_size= 512,
+                hidden_size= self.hidden_size,
+                num_classes= self.num_classes,
+                conv_type= self.conv_type
+            )
+        else:
+            self.Temporal_Conv = T2(
+                input_size= 512,
+                hidden_size= self.hidden_size,
+                num_classes= self.num_classes,
+                conv_type= self.conv_type
+            )
         
         self.classifier = nn.Linear(self.hidden_size, self.num_classes)
         self.ctc_loss = torch.nn.CTCLoss(blank= 0, reduction= 'mean')
@@ -88,13 +98,13 @@ class SLR_Network(  nn.Module):
         return {
             "feat_len": out_conv["feat_len"],
             "conv_logits": out_conv["conv_logits"],
-            "loss_update_lift": out_conv["loss_LiftPool_u"],
-            "loss_pred_lift": out_conv["loss_LiftPool_p"],
+            # "loss_update_lift": out_conv["loss_LiftPool_u"],
+            # "loss_pred_lift": out_conv["loss_LiftPool_p"],
             "sequence_logits": output,
             "predictions": decode
         }
     
-    def get_loss(self, output, input_len, label, label_len):
+    def get_loss(self, output, input_len, label, label_len, coef= None):
         total_loss = {}
         loss = 0 
         # CTC Loss
@@ -133,7 +143,7 @@ class SLR_Network(  nn.Module):
             label_len
         ).mean()
         
-        total_loss['Dist'] = 25 * self.distillation_loss(
+        total_loss['Dist'] = self.distillation_loss(
             output["conv_logits"].permute(2, 0, 1),
             output["sequence_logits"].detach()
         )
@@ -145,11 +155,16 @@ class SLR_Network(  nn.Module):
             input_len,
             label_len
         ).mean()
-
-        loss += total_loss['Seq']
-        loss += total_loss['Conv']
-        loss += total_loss['Dist']
-        loss += 0.0005 * (output["loss_update_lift"] + output["loss_pred_lift"])
+        if coef is None:
+            loss += total_loss['Seq']
+            loss += total_loss['Conv']
+            loss +=25 *  total_loss['Dist']
+        else:
+            loss += coef[0] * total_loss['Seq']
+            loss += coef[1] * total_loss['Conv']
+            loss += coef[2] * total_loss['Dist']
+        if self.conv_improve:
+            loss += 0.0005 * (output["loss_update_lift"] + output["loss_pred_lift"])
         
         return loss
         
