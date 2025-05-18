@@ -181,7 +181,7 @@ class BasicBlock(nn.Module):
         
 class ResNet(nn.Module):
 
-    def __init__(self, block, layers, num_classes=1000):
+    def __init__(self, block, layers, num_classes=1000, num_neighbors= [1, 3, 5]):
         self.inplanes = 64
         super(ResNet, self).__init__()
         self.conv1 = nn.Conv3d(3, 64, kernel_size=(1,7,7), stride=(1,2,2), padding=(0,3,3),
@@ -191,13 +191,13 @@ class ResNet(nn.Module):
         self.maxpool = nn.MaxPool3d(kernel_size=(1,3,3), stride=(1,2,2), padding=(0,1,1))
         self.layer1 = self._make_layer(block, 64, layers[0])
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
-        self.corr2 = Get_Correlation(self.inplanes, neighbors=1)
+        self.corr2 = Get_Correlation(self.inplanes, neighbors= num_neighbors[0])
         self.temporal_weight2 = TemporalWeighting(self.inplanes)
         self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
-        self.corr3 = Get_Correlation(self.inplanes, neighbors=3)
+        self.corr3 = Get_Correlation(self.inplanes, neighbors= num_neighbors[1])
         self.temporal_weight3 = TemporalWeighting(self.inplanes)
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
-        self.corr4 = Get_Correlation(self.inplanes, neighbors=5)
+        self.corr4 = Get_Correlation(self.inplanes, neighbors= num_neighbors[2])
         self.temporal_weight4 = TemporalWeighting(self.inplanes)
         self.alpha = nn.Parameter(torch.zeros(3), requires_grad=True)
         self.avgpool = nn.AvgPool2d(7, stride=1)
@@ -244,25 +244,29 @@ class ResNet(nn.Module):
         x = self.layer4(x)
         x = x + self.corr4(x) * self.alpha[2]
         x = x + self.temporal_weight4(x)
-
+        print("Shape of x before avgpool: ", x.shape)
         x = x.transpose(1,2).contiguous()
-        x = x.view((-1,)+x.size()[2:]) #bt,c,h,w
+        x = x.view((-1,) +x.size()[2:]) #bt,c,h,w
 
         x = self.avgpool(x)
+        print("Shape of x after avgpool: ", x.shape)
         x = x.view(x.size(0), -1) #bt,c
+        print("shape of x before fc: ", x.shape)
         x = self.fc(x) #bt,c
+        print("Shape of x after fc: ", x.shape)
 
         return x
 
 
     
-def pretrain_resnet18(num_class= 1000):
-    model = ResNet(BasicBlock, [2, 2, 2, 2], num_classes= num_class)
+def pretrain_resnet18(num_class= 1000, num_neighbors= [1, 3, 5]):
+    model = ResNet(BasicBlock, [2, 2, 2, 2], num_classes= num_class, num_neighbors= num_neighbors)
     model_urls = {
     'resnet18': 'https://download.pytorch.org/models/resnet18-f37072fd.pth'
     }
     checkpoint = model_zoo.load_url(model_urls['resnet18'], map_location= 'cpu')
     layer_name = list(checkpoint.keys())
+    # print(layer_name)
     for ln in layer_name:
         if 'conv' in ln or 'downsample.0.weight' in ln:
             checkpoint[ln] = checkpoint[ln].unsqueeze(2)
@@ -275,8 +279,12 @@ def pretrain_resnet18(num_class= 1000):
 
 def test():
     net = pretrain_resnet18()
-    x = torch.randn(1, 3, 16, 224, 224)
+    x = torch.randn(2, 3, 16, 224, 224)
     y = net(x)
     print(y.size())
+    # get the total number of parameters
+    num_params = sum(p.numel() for p in net.parameters())
+    print(f'Total number of parameters: {num_params / 1e6:.2f}M')
     
-# test()
+if __name__ == "__main__":
+    test()

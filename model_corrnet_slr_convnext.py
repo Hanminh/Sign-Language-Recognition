@@ -2,7 +2,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from Modules.BiLSTM import BiLSTM
 from Modules.Convolution1D import TemporalConv
-from Modules.attention_corrnet import BasicBlock, conv3x3, Get_Correlation, ResNet, pretrain_resnet18
+from Modules.ConvNexT3D import ConvNeXt3D, convnext3d_tiny
 from Modules.Loss import SeqKD
 from Modules.CTCDecoder import CTCDecoder
 from Modules.temporal_lifting_pool import TemporalConv as T1
@@ -41,8 +41,8 @@ class SLR_Network(  nn.Module):
             bidirectional= True,
             rnn_type= rnn_type)
         
-        self.CorrNet = pretrain_resnet18(num_neighbors= num_neighbors)
-        self.CorrNet.fc = Identity()
+        self.CorrNet = convnext3d_tiny(num_neighbors= num_neighbors)
+        self.CorrNet.head = Identity()
         # self.ConvNet = Convolution1D(
         #     input_size= self.num_classes, 
         #     hidden_size= self.hidden_size,
@@ -51,14 +51,14 @@ class SLR_Network(  nn.Module):
         # )
         if self.conv_improve:
             self.Temporal_Conv = T1(
-                input_size= 512,
+                input_size= 768,
                 hidden_size= self.hidden_size,
                 num_classes= self.num_classes,
                 conv_type= self.conv_type
             )
         else:
             self.Temporal_Conv = T2(
-                input_size= 512,
+                input_size= 768,
                 hidden_size= self.hidden_size,
                 num_classes= self.num_classes,
                 conv_type= self.conv_type
@@ -80,11 +80,9 @@ class SLR_Network(  nn.Module):
         batch, temp, channel, height, width = feat.shape
         feat = feat.permute(0, 2, 1, 3, 4) # Shape: (batch, channels, T, H, W)
         feat = self.CorrNet(feat)
-        print(f"Shape after CorrNet: {feat.shape}")
         
         # Convolution1D
         feat = feat.view(batch, temp, -1).permute((0, 2, 1))
-        print(f"Shape after CorrNet: {feat.shape}")
         out_conv = self.Temporal_Conv(feat, vid_len) 
         
         # BiLSTM 
@@ -169,4 +167,4 @@ class SLR_Network(  nn.Module):
             loss += 0.0005 * (output["loss_update_lift"] + output["loss_pred_lift"])
         
         return loss
-        
+    

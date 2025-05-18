@@ -21,7 +21,7 @@ class Identity(nn.Module):
         return x
 
 class SLR_Network(  nn.Module):
-    def __init__(self, hidden_size= 1024, kernel_size=5,  num_classes= 1000, dictionary= None, T = 1., beam_size= 50, conv_type =9, conv_improve= False, lstm_layers = 2, lstm_layers_classifier = 1):
+    def __init__(self, hidden_size= 1024, kernel_size=5,  num_classes= 1000, dictionary= None, T = 1., beam_size= 50, conv_type =9, conv_improve= False, lstm_layers = 1, lstm_layers_classifier = 1, num_neighbors= [1, 3, 5] ):
         super(SLR_Network, self).__init__()
         self.hidden_size = hidden_size
         self.num_classes = num_classes
@@ -45,18 +45,18 @@ class SLR_Network(  nn.Module):
         self.BiLSTM_Classifier = BiLSTMClassifier(
             input_size=self.hidden_size,
             hidden_size= self.hidden_size // 2,
-            num_layers= 1,
+            num_layers= lstm_layers_classifier,
             bidirectional= True,
             num_classes= self.num_classes)
         
         self.BiLSTM = BiLSTM(
             input_size=self.hidden_size,
             hidden_size= self.hidden_size // 2,
-            num_layers= 1,
+            num_layers= lstm_layers,
             bidirectional= True,
             num_classes= self.num_classes)
         
-        self.CorrNet = pretrain_resnet18()
+        self.CorrNet = pretrain_resnet18(num_neighbors= num_neighbors)
         self.CorrNet.fc = Identity()
         # self.ConvNet = Convolution1D(
         #     input_size= self.num_classes, 
