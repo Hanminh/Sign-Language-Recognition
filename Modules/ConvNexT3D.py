@@ -151,8 +151,12 @@ class LayerNorm3D(nn.Module):
         if self.data_format == "channels_last":
             return self.layer_norm(x)
         elif self.data_format == "channels_first":
-            x = x.permute(0, 2, 3, 4, 1) # B, C, T, H, W -> B, T, H, W, C
+            x = x.permute(0, 2, 3, 4, 1).contiguous() # B, C, T, H, W -> B, T, H, W, C
+            # view x as (B *T, H, W, C)
+            batch_size, T, H, W, C = x.shape
+            x = x.view(-1, H, W, C).contiguous() # (B * T, H, W, C)
             x = self.layer_norm(x)
+            x = x.view(batch_size, T, H, W, C).contiguous()
             x = x.permute(0, 4, 1, 2, 3)
             return x
         
@@ -249,7 +253,7 @@ class ConvNeXt3D(nn.Module):
         return self.norm(x.mean([-2, -1]).permute(0, 2, 1)) 
     def forward(self , x):
         x = self.forward_features(x)
-        x = x.view(-1, x.shape[-1])
+        x = x.view(-1, x.shape[-1]).contiguous()  # Flatten the features
         x = self.head(x)
         return x
 
@@ -304,4 +308,4 @@ def test():
     y = model(x)
     print(y.shape) # expect [2, 1000]
     
-test()
+# test()

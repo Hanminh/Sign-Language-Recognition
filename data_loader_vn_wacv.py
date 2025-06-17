@@ -82,9 +82,12 @@ class VideoDataset(data.Dataset):
         label_list.append(label + 1)
         # print(img_list[0])
         # print(name)
+        img_list = img_list + img_list 
+        # print(f'img_list: {img_list}')
         data = [cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB) for img_path in img_list] 
         # convert data to numpy array
         data = np.array(data)
+
         return data, label_list, data.shape[0], [label]
     
     # def read_feature(self, index):

@@ -80,11 +80,9 @@ class SLR_Network(  nn.Module):
         batch, temp, channel, height, width = feat.shape
         feat = feat.permute(0, 2, 1, 3, 4) # Shape: (batch, channels, T, H, W)
         feat = self.CorrNet(feat)
-        print(f"Shape after CorrNet: {feat.shape}")
         
         # Convolution1D
         feat = feat.view(batch, temp, -1).permute((0, 2, 1))
-        print(f"Shape after CorrNet: {feat.shape}")
         out_conv = self.Temporal_Conv(feat, vid_len) 
         
         # BiLSTM 
@@ -93,10 +91,11 @@ class SLR_Network(  nn.Module):
         output = self.classifier(out_lstm["predictions"])
         # decode = self.decoder.decode_logits(output["sequence_logits"].squeeze().cpu().detach().numpy())
         logit_logprob = output.permute(1, 0, 2).log_softmax(-1).cpu().detach().numpy() 
-        if np.isnan(logit_logprob).any() or np.isinf(logit_logprob).any():
-            decode = None
-        else:
-            decode = self.decoder.decode_logits(logit_logprob)
+        # if np.isnan(logit_logprob).any() or np.isinf(logit_logprob).any():
+        #     decode = None
+        # else:
+        #     decode = self.decoder.decode_logits(logit_logprob)
+        decode = self.decoder.decode_logits(logit_logprob)
         return {
             "feat_len": out_conv["feat_len"],
             "conv_logits": out_conv["conv_logits"],
@@ -115,28 +114,28 @@ class SLR_Network(  nn.Module):
         # # Distillation Loss
         # if torch.isnan(output["conv_logits"]).any() or torch.isinf(output["conv_logits"]).any():
         #     return None
-        assert (input_len >= label_len).all()
-        if (input_len <= 0).any() or (label_len <= 0).any():
-            print("input_lengths hoặc target_lengths có giá trị <= 0!")
-            print(label)
-            print(label_len)
-            print(input_len)
-        if torch.isnan(input_len).any() or torch.isnan(label_len).any():
-            print("NaN xuất hiện trong input_lengths hoặc target_lengths!")
-            print(label)
-            print(label_len)
-            print(input_len)
+        # assert (input_len >= label_len).all()
+        # if (input_len <= 0).any() or (label_len <= 0).any():
+        #     print("input_lengths hoặc target_lengths có giá trị <= 0!")
+        #     print(label)
+        #     print(label_len)
+        #     print(input_len)
+        # if torch.isnan(input_len).any() or torch.isnan(label_len).any():
+        #     print("NaN xuất hiện trong input_lengths hoặc target_lengths!")
+        #     print(label)
+        #     print(label_len)
+        #     print(input_len)
 
-        if torch.isnan(output['conv_logits']).any() or torch.isnan(output["sequence_logits"]).any():
-            print("NaN detected in prediction_logits before log_softmax!")
-            print(label)
-            torch.save(output, '/home/guest/Minh_20210605/Model_VN/debug_data_1.pt')
+        # if torch.isnan(output['conv_logits']).any() or torch.isnan(output["sequence_logits"]).any():
+        #     print("NaN detected in prediction_logits before log_softmax!")
+        #     print(label)
+        #     torch.save(output, '/home/guest/Minh_20210605/Model_VN/debug_data_1.pt')
 
 
-        if torch.isinf(output['conv_logits']).any() or torch.isinf(output["sequence_logits"]).any():
-            print("Inf detected in prediction_logits before log_softmax!")
-            print(label)
-            torch.save(output, '/home/guest/Minh_20210605/Model_VN/debug_data_1.pt')
+        # if torch.isinf(output['conv_logits']).any() or torch.isinf(output["sequence_logits"]).any():
+        #     print("Inf detected in prediction_logits before log_softmax!")
+        #     print(label)
+        #     torch.save(output, '/home/guest/Minh_20210605/Model_VN/debug_data_1.pt')
 
         total_loss['Seq'] = self.ctc_loss(
             output["sequence_logits"].log_softmax(-1),

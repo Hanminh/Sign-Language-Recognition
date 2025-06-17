@@ -114,9 +114,9 @@ class Get_Correlation(nn.Module):
         
     def forward(self, x):
         N, C, T, H, W = x.shape
-        def clustering(query, key):
-            affinities = torch.einsum('bctp, bctl-> btpl', query, key)
-            return torch.einsum('bctl, btpl->bctp', key, F.sigmoid(affinities) - 0.5)
+        def clustering(frame, neighbors):
+            affinities = torch.einsum('bctp, bctl-> btpl', frame, neighbors)
+            return torch.einsum('bctl, btpl->bctp', neighbors, F.sigmoid(affinities) - 0.5)
         
         x_mean = x.mean(3, keepdim= True).mean(4, keepdim= False)
         x_max = x.max(-1, keepdim= False)[0].max(-1, keepdim= True)[0]
@@ -127,7 +127,7 @@ class Get_Correlation(nn.Module):
         upfold = (torch.concat([upfold[:, :, :, :self.neighbors], upfold[:, :, :, self.neighbors+1:]], dim= 3) * self.weights2.view(1, 1, 1, -1, 1, 1)).view(N, C, T, -1)
         x_mean = x_mean * self.weights4[0] + x_max * self.weights4[1] + x_att * self.weights4[2]
         x_mean = clustering(x_mean, upfold)
-        features = x_mean.view(N, C, T, self.clusters, 1)
+        features = x_mean.view(N, C, T, 1, 1)
         
         x_down = self.down_conv(x)
         aggregated_x = self.spatial_aggregation1(x_down) * self.weights[0] + \
@@ -244,16 +244,12 @@ class ResNet(nn.Module):
         x = self.layer4(x)
         x = x + self.corr4(x) * self.alpha[2]
         x = x + self.temporal_weight4(x)
-        print("Shape of x before avgpool: ", x.shape)
         x = x.transpose(1,2).contiguous()
         x = x.view((-1,) +x.size()[2:]) #bt,c,h,w
 
         x = self.avgpool(x)
-        print("Shape of x after avgpool: ", x.shape)
         x = x.view(x.size(0), -1) #bt,c
-        print("shape of x before fc: ", x.shape)
         x = self.fc(x) #bt,c
-        print("Shape of x after fc: ", x.shape)
 
         return x
 

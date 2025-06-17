@@ -4,8 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 # from Modules import *
 from Generate_Data.data_augmentation import *
-import data_loader_vn_id
-import data_loader_vn
+import data_loader_vn_wacv
 import os
 import torch
 from Modules import BiLSTM
@@ -15,17 +14,17 @@ from model_corrnet_slr import SLR_Network
 from torch.nn import CTCLoss
 from torch.cuda.amp import autocast, GradScaler
 import torch.optim as optim
-from argument import BATCHSIZE_EVAL, USE_GPU_EVAL, HIDDEN_SIZE_CORRNET, CONV_TYPE_CORRNET_CNN_IMPROVE, CONV_TYPE_CORRNET_CNN_NORMAL
+from argument import BATCHSIZE_TRAIN, HIDDEN_SIZE_CORRNET, GAMMA, EPOCH, CONV_TYPE_CORRNET_CNN_IMPROVE, REGULARIZATION
+import gc
 from tqdm import tqdm
 from dotenv import load_dotenv
 load_dotenv()
 import os
-FEATURE_PATH = os.getenv("FEATURE_PATH")
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
 INFORMATION_PATH = os.getenv("INFORMATION_PATH")
 FEATURE_PATH = os.getenv("FEATURE_PATH")
 MODEL_SAVE_PATH = os.getenv("MODEL_SAVE_PATH")
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
 
 def encode_text(sample):
     encode_text = torch.tensor([])
@@ -48,54 +47,43 @@ vn_id2gloss = np.load(f'{INFORMATION_PATH}/vn_id2gloss.npy', allow_pickle=True).
 vn_dictionary = np.load(f'{INFORMATION_PATH}/vn_dictionary.npy', allow_pickle=True).item()
 dictionary = []
 dictionary.append(' ')
-dictionary2 = []
-dictionary2.append(' ')
-size = 1
 for i in list(vn_dictionary.keys()):
     dictionary.append(i + '|')
-    dictionary2.append(str(size) +"|")
-    size += 1
 
 vn_gloss2id = np.load(f'{INFORMATION_PATH}/vn_gloss2id.npy', allow_pickle=True).item()
 
-dataset = data_loader_vn.VideoDataset(id2gloss=vn_id2gloss, gloss2id=vn_gloss2id,
-                                      kernel_size= [('K', 5), ('P', 4),('K', 5), ('P', 2)],
-                                      mode= 'test', transform_mode= False, feature_folder= FEATURE_PATH,
+dataset = data_loader_vn_wacv.VideoDataset(id2gloss=vn_id2gloss, gloss2id=vn_gloss2id,
+                                      kernel_size= [('K', 5), ('P', 4),('K', 5), ('P', 2)], mode= 'speaker_all', transform_mode= True, feature_folder= FEATURE_PATH,
                                       infor_folder= INFORMATION_PATH)
 
 dataloader = torch.utils.data.DataLoader(
     dataset, 
-    batch_size= BATCHSIZE_EVAL, 
+    batch_size= BATCHSIZE_TRAIN, 
     shuffle=False, 
     num_workers=0, 
     collate_fn=dataset.collate_fn,
     drop_last= True)
 
 # Prepare the model
-model = SLR_Network(num_classes= len(dictionary2) + 1, dictionary= dictionary, conv_type= CONV_TYPE_CORRNET_CNN_NORMAL, hidden_size= 2048, conv_improve= False)
-# model.to('cuda')
-checkpoint = torch.load('Model/VN_2048_3Loss_Normal1D_CNN/model_checkpoint_epoch_100.pth')
-model.load_state_dict(checkpoint['model_state_dict'], strict= False)
-if USE_GPU_EVAL:
-    model = model.to('cuda')
-torch.cuda.empty_cache()
+model = SLR_Network(num_classes= len(dictionary) + 1, dictionary= dictionary, conv_type= CONV_TYPE_CORRNET_CNN_IMPROVE, hidden_size= HIDDEN_SIZE_CORRNET)
+model.to('cuda')
+wer_test = 0 
 model.eval()
-wer = 0
 with torch.no_grad():
-    for i, sample in tqdm(enumerate(dataloader)):
-        input_data = sample[0]
-        if USE_GPU_EVAL:
-            input_data = input_data.to('cuda')
-        vid_len = sample[1]
-        output = model(input_data, vid_len)
-        for i in range(BATCHSIZE_EVAL):
-            wer += calculate_wer(output['predictions'][i], sample[-1][i])
-            # print(f'Pred: {output["predictions"][i]}')
-            # print(f'True: {sample[-1][i]}')
+        for i, sample in tqdm(enumerate(dataloader)):
+            input = sample[0].to('cuda', non_blocking=True)
+            # vid_len = sample[1].to('cuda', non_blocking=True)
+            # targets = sample[2].to('cuda', non_blocking=True)
+            # target_lengths = sample[3].to('cuda', non_blocking=True)
+            vid_len = sample[1]
+            targets = sample[2]
+            target_lengths = sample[3]
 
-print(f'WER: {wer / len(dataloader) / BATCHSIZE_EVAL}')
-        
+            output = model(input, vid_len)
+            target_lengths = sample[3]
+            for i in range(BATCHSIZE_TRAIN):
+                wer_test += calculate_wer(output["predictions"][i], sample[-1][i])
             
+            del input, output, vid_len
 
-
-
+print(f'WER: {wer_test / len(dataloader)}')

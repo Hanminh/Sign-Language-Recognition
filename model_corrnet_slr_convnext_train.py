@@ -10,12 +10,11 @@ import torch
 from Modules import BiLSTM
 from Modules.BiLSTM import BiLSTM
 from Modules.attention_corrnet import ResNet, BasicBlock
-from model_corrnet_slr_wacv_3Loss import SLR_Network
+from model_corrnet_slr_convnext import SLR_Network
 from torch.nn import CTCLoss
 from torch.cuda.amp import autocast, GradScaler
 import torch.optim as optim
-from argument import BATCHSIZE_TRAIN, HIDDEN_SIZE_CORRNET, GAMMA, EPOCH, CONV_TYPE_CORRNET_CNN_IMPROVE, \
-    REGULARIZATION, LEARNING_RATE, CONV_TYPE_CORRNET_CNN_NORMAL
+from argument import BATCHSIZE_TRAIN, HIDDEN_SIZE_CORRNET, GAMMA, EPOCH, CONV_TYPE_CORRNET_CNN_IMPROVE, REGULARIZATION, CONV_TYPE_CORRNET_CNN_NORMAL
 import gc
 from tqdm import tqdm
 import jiwer
@@ -25,13 +24,18 @@ import os
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 INFORMATION_PATH = os.getenv("INFORMATION_PATH")
-FEATURE_PATH = os.getenv("FEATURE_PATH")
 MODEL_SAVE_PATH = os.getenv("MODEL_SAVE_PATH")
 
-print('Fix calc Wer')
+def encode_text(sample):
+    encode_text = torch.tensor([])
+    for i in range(len(sample[2])) :
+        encode_text = torch.cat((encode_text, torch.tensor([sample[2][i], 0])))
+        if i == len(sample[2]) - 1:
+            encode_text = torch.cat((encode_text, torch.tensor([sample[2][i]])))
+    return encode_text
 
 def calculate_wer(pred, true):
-    pred_words = pred.split('|')[:]
+    pred_words = pred.split('|')[:-1]
     pred_str = ' '.join(pred_words)
     wer_score = jiwer.wer(true, pred_str)
     return wer_score
@@ -40,7 +44,7 @@ def calculate_wer(pred, true):
 dataset_train = data_loader_vn_wacv.VideoDataset(
                                             kernel_size= [('K', 5), ('P', 4),('K', 5), ('P', 2)], 
                                             mode= 'train', transform_mode= True,
-                                            infor_folder= '/home/guest/Minh_20210605/SLR_Slowfast/Sign-Language-Recognition/WACV_DATA'
+                                            #infor_folder= '/home/guest/Minh_20210605/SLR_Slowfast/Sign-Language-Recognition/WACV_DATA'
                                             )
 
 dataloader_train = torch.utils.data.DataLoader(
@@ -67,7 +71,7 @@ dataloader_train = torch.utils.data.DataLoader(
 dataset_dev = data_loader_vn_wacv.VideoDataset(
                                       kernel_size= [('K', 5), ('P', 4),('K', 5), ('P', 2)], 
                                       mode= 'val', transform_mode= False,
-                                      infor_folder= '/home/guest/Minh_20210605/SLR_Slowfast/Sign-Language-Recognition/WACV_DATA'
+                                      #infor_folder= '/home/guest/Minh_20210605/SLR_Slowfast/Sign-Language-Recognition/WACV_DATA'
                                       )
 
 dataloader_dev = torch.utils.data.DataLoader(
@@ -84,12 +88,13 @@ for i in range(199):
     dictionary.append(str(i) + '|')
     
 # Prepare the model
-model = SLR_Network(num_classes= len(dictionary) - 1, dictionary= dictionary, 
-                    conv_type= CONV_TYPE_CORRNET_CNN_NORMAL, hidden_size= 1024, conv_improve= False)
+model = SLR_Network(num_classes= len(dictionary) + 1, dictionary= dictionary, 
+                    conv_type = CONV_TYPE_CORRNET_CNN_NORMAL, conv_improve= False,
+                    hidden_size= 1024)
 model.to('cuda')
-
-optimizer = torch.optim.Adam(model.parameters(), lr= 0.0001, weight_decay= REGULARIZATION * 2) 
-scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones= [35, 50, 60], gamma= 0.1)
+# criterion = CTCLoss(blank= 0, zero_infinity= True)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay= REGULARIZATION) 
+scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones= [40, 76], gamma= GAMMA)
 scaler = GradScaler()
 
 loss_histories_train = []
@@ -98,30 +103,34 @@ loss_histories_dev = []
 wer_histories_dev = []
 torch.cuda.empty_cache()
 
+model.train()
 for epoch in range(0, EPOCH):
-    
+  
     running_loss_train = 0.0
     wer_train = 0.0
     running_loss_dev = 0.0
     wer_dev = 0.0
     model.train()
     for i, sample in tqdm(enumerate(dataloader_train)):
-        
+        # break
         input = sample['data'].to('cuda', non_blocking=True)
-        vid_len = sample['video_length'].to('cuda', non_blocking=True)
-        targets = (sample['label'] - 1).to('cuda', non_blocking=True)
-        target_lengths = sample['label_length'].to('cuda', non_blocking=True)
+        vid_len = sample['video_length']#.to('cuda', non_blocking=True)
+        targets = sample['label']#.to('cuda', non_blocking=True)
+        target_lengths = sample['label_length']#.to('cuda', non_blocking=True)
 
         # Forward pass
         with autocast():
             output = model(input, vid_len)
+            input_lengths = torch.full(
+                (output['sequence_logits'].shape[1],), 
+                output['sequence_logits'].shape[0], 
+                dtype=torch.long
+            )
 
-            loss = model.get_loss(output, targets, coef= [1, 1, 25])
-            # print(targets)
-            # print(output['predicted_class'])
+            loss = model.get_loss(output, input_lengths, targets, target_lengths, coef= [2, 1, 25])
+        with torch.no_grad():
             for i in range(BATCHSIZE_TRAIN):
-                if output['predicted_class'][i] == targets[i]:
-                    wer_train += 1
+                wer_train += calculate_wer(output['predictions'][i], sample['sentence'][i])
             
         running_loss_train += loss.item()
         
@@ -134,38 +143,42 @@ for epoch in range(0, EPOCH):
         scaler.update()
 
 
-        # loss.detach()
+        loss.detach()
         del loss, input, output, vid_len, targets, target_lengths
         gc.collect()
         torch.cuda.empty_cache()
-
     epoch_loss = running_loss_train / len(dataloader_train)
     wer_train = wer_train / len(dataloader_train) / BATCHSIZE_TRAIN
     loss_histories_train.append(epoch_loss)
     wer_histories_train.append(wer_train)
     
-    # update learning rate 
+    #update learning rate 
     scheduler.step()
-
     # dev 
     model.eval()
     with torch.no_grad():
         for i, sample in tqdm(enumerate(dataloader_dev)):
             input = sample['data'].to('cuda', non_blocking=True)
-            vid_len = sample['video_length'].to('cuda', non_blocking=True)
-            targets = (sample['label'] - 1).to('cuda', non_blocking=True)
-            target_lengths = sample['label_length'].to('cuda', non_blocking=True)
+            vid_len = sample['video_length']#.to('cuda', non_blocking=True)
+            targets = sample['label']#.to('cuda', non_blocking=True)
+            target_lengths = sample['label_length']#.to('cuda', non_blocking=True)
 
             output = model(input, vid_len)
-            loss = model.get_loss(output, targets)
+            input_lengths = torch.full(
+                (output['sequence_logits'].shape[1],), 
+                output['sequence_logits'].shape[0], 
+                dtype=torch.long
+            )
+            loss = model.get_loss(output, input_lengths, targets, target_lengths, coef= [2, 1, 25])
+            
             for i in range(BATCHSIZE_TRAIN):
-                if output['predicted_class'][i] == targets[i]:
-                    wer_dev += 1
+                wer_dev += calculate_wer(output['predictions'][i], sample['sentence'][i])
             
             running_loss_dev += loss.item()
             del loss, input, output, vid_len, targets, target_lengths
             
             
+    
     running_loss_dev = running_loss_dev / len(dataloader_dev)
     wer_dev = wer_dev / len(dataloader_dev) / BATCHSIZE_TRAIN
     loss_histories_dev.append(running_loss_dev)

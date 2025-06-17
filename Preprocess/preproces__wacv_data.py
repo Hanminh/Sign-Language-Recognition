@@ -7,6 +7,7 @@ from multiprocessing import Pool
 from functools import partial
 from dotenv import load_dotenv
 
+SKIP_FRAME = 1
 # Load environment variables
 load_dotenv()
 ROOT_PATH = os.getenv('VN_SINGLE_WORD_DATA_PATH')
@@ -39,15 +40,15 @@ def read_video(row, root_path, save_path):
             if not ret:
                 break
             frame = cv.resize(frame, (256, 256), interpolation=cv.INTER_LANCZOS4)
-            if num % 3 == 0:
-                cv.imwrite(f'{save_dir}\\{format_len(num // 3)}.jpg', frame)
+            if num %  SKIP_FRAME== 0:
+                cv.imwrite(f'{save_dir}\\{format_len(num // SKIP_FRAME)}.jpg', frame)
             num += 1
 
         cap.release()
     except Exception as e:
         print(f"Error processing {video_path}: {e}")
 
-def extract_frame_from_vid(data_type='1_200', num_workers=8):
+def extract_frame_from_vid(data_type='1_200', num_workers=12):
     """Extract frames from videos using multiprocessing."""
     csv_path = f'{ROOT_PATH}\\label_{data_type}\\full_data_{data_type}_center_ord1.csv'
     df = pd.read_csv(csv_path)

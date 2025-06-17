@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 # from Modules import *
 from Generate_Data.data_augmentation import *
+import data_loader_vn_wacv
 import data_loader_vn
 import os
 import torch
@@ -14,9 +15,10 @@ from model_corrnet_slr import SLR_Network
 from torch.nn import CTCLoss
 from torch.cuda.amp import autocast, GradScaler
 import torch.optim as optim
-from argument import BATCHSIZE_TRAIN, HIDDEN_SIZE_CORRNET, GAMMA, EPOCH, CONV_TYPE_CORRNET_CNN_IMPROVE, REGULARIZATION, LEARNING_RATE, CONV_TYPE_CORRNET_CNN_NORMAL
+from argument import BATCHSIZE_TRAIN, HIDDEN_SIZE_CORRNET, GAMMA, EPOCH, CONV_TYPE_CORRNET_CNN_IMPROVE, REGULARIZATION
 import gc
 from tqdm import tqdm
+import jiwer
 from dotenv import load_dotenv
 load_dotenv()
 import os
@@ -34,22 +36,15 @@ def encode_text(sample):
             encode_text = torch.cat((encode_text, torch.tensor([sample[2][i]])))
     return encode_text
 
-import jiwer
 def calculate_wer(pred, true):
     pred_words = pred.split('|')[:-1]
     pred_str = ' '.join(pred_words)
     wer_score = jiwer.wer(true, pred_str)
     return wer_score
 
-
 vn_id2gloss = np.load(f'{INFORMATION_PATH}/vn_id2gloss.npy', allow_pickle=True).item()
 
 vn_dictionary = np.load(f'{INFORMATION_PATH}/vn_dictionary.npy', allow_pickle=True).item()
-dictionary = []
-dictionary.append(' ')
-for i in list(vn_dictionary.keys()):
-    dictionary.append(i + '|')
-
 vn_gloss2id = np.load(f'{INFORMATION_PATH}/vn_gloss2id.npy', allow_pickle=True).item()
 
 dataset_train = data_loader_vn.VideoDataset(id2gloss=vn_id2gloss, gloss2id=vn_gloss2id,
@@ -76,13 +71,47 @@ dataloader_dev = torch.utils.data.DataLoader(
     collate_fn=dataset_dev.collate_fn,
     drop_last= True)
 
+dataset_train_wacv = data_loader_vn_wacv.VideoDataset(
+                                            kernel_size= [('K', 5), ('P', 4),('K', 5), ('P', 2)], mode= 'train', transform_mode= False
+                                            )
 
+dataloader_train_wacv = torch.utils.data.DataLoader(
+    dataset_train_wacv, 
+    batch_size= BATCHSIZE_TRAIN, 
+    shuffle=True, 
+    num_workers=0, 
+    collate_fn=dataset_train_wacv.collate_fn,
+    drop_last= True)
+
+dataset_dev = data_loader_vn_wacv.VideoDataset(
+                                      kernel_size= [('K', 5), ('P', 4),('K', 5), ('P', 2)], mode= 'val', transform_mode= False
+                                      )
+
+dataloader_dev = torch.utils.data.DataLoader(
+    dataset_dev, 
+    batch_size=1, 
+    shuffle=True, 
+    num_workers=0, 
+    collate_fn=dataset_dev.collate_fn,
+    drop_last= True)
+
+dict_wacv = []
+dict_wacv.append(' ')
+for i in range(199):
+    dict_wacv.append(str(i) + '| |')
+
+dict_vn = []
+for i in list(vn_dictionary.keys()):
+    dict_vn.append(i + '|')
+    
+dictionary = dict_wacv + dict_vn
+    
 # Prepare the model
-model = SLR_Network(num_classes= len(dictionary) + 1, dictionary= dictionary, conv_type= CONV_TYPE_CORRNET_CNN_NORMAL, hidden_size= HIDDEN_SIZE_CORRNET, conv_improve= False)
+model = SLR_Network(num_classes= len(dictionary) + 1, dictionary= dictionary, conv_type= 9, hidden_size= HIDDEN_SIZE_CORRNET, conv_improve= False)
 model.to('cuda')
 # criterion = CTCLoss(blank= 0, zero_infinity= True)
-optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay= REGULARIZATION) 
-scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones= [40, 60], gamma= GAMMA)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, weight_decay= REGULARIZATION) 
+scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones= [30, 60], gamma= GAMMA)
 scaler = GradScaler()
 
 loss_histories_train = []
@@ -99,6 +128,41 @@ for epoch in range(0, EPOCH):
     running_loss_dev = 0.0
     wer_dev = 0.0
     model.train()
+    for i, sample in tqdm(enumerate(dataloader_train_wacv)):
+        
+        input = sample['data'].to('cuda', non_blocking=True)
+        vid_len = sample['video_length'].to('cuda', non_blocking=True)
+        targets = sample['label'].to('cuda', non_blocking=True)
+        target_lengths = sample['label_length'].to('cuda', non_blocking=True)
+
+        # Forward pass
+        with autocast():
+            output = model(input, vid_len)
+            input_lengths = torch.full(
+                (output['sequence_logits'].shape[1],), 
+                output['sequence_logits'].shape[0], 
+                dtype=torch.long
+            )
+            loss = model.get_loss(output, input_lengths, targets, target_lengths)
+        with torch.no_grad():
+            for i in range(BATCHSIZE_TRAIN):
+                wer_train += calculate_wer(output['predictions'][i], sample['sentence'][i])
+            
+        running_loss_train += loss.item()
+        
+        # Backward and optimize
+        optimizer.zero_grad()
+        # loss.backward()
+        # optimizer.step()
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+
+
+        loss.detach()
+        del loss, input, output, vid_len, targets, target_lengths
+        gc.collect()
+        torch.cuda.empty_cache()
     for i, sample in tqdm(enumerate(dataloader_train)):
         
         input = sample[0].to('cuda', non_blocking=True)
@@ -118,7 +182,7 @@ for epoch in range(0, EPOCH):
                 dtype=torch.long
             )
             target_lengths = sample[3]
-            loss = model.get_loss(output, input_lengths, sample[2], target_lengths)
+            loss = model.get_loss(output, input_lengths, sample[2] + 199, target_lengths)
         
         # loss = model.get_loss(output, input_lengths, sample[2], target_lengths)
         running_loss_train += loss.item()
@@ -141,14 +205,37 @@ for epoch in range(0, EPOCH):
         del loss, input, output, vid_len
         gc.collect()
         torch.cuda.empty_cache()
-    epoch_loss = running_loss_train / len(dataloader_train)
-    wer_train = wer_train / len(dataloader_train)
+    
+    epoch_loss = running_loss_train / len(dataloader_train_wacv)
+    wer_train = wer_train / len(dataloader_train_wacv)
     loss_histories_train.append(epoch_loss)
     wer_histories_train.append(wer_train)
     
+    #update learning rate 
+    scheduler.step()
     # dev 
     model.eval()
     with torch.no_grad():
+        for i, sample in tqdm(enumerate(dataloader_dev)):
+            input = sample['data'].to('cuda', non_blocking=True)
+            vid_len = sample['video_length'].to('cuda', non_blocking=True)
+            targets = sample['label'].to('cuda', non_blocking=True)
+            target_lengths = sample['label_length'].to('cuda', non_blocking=True)
+
+            output = model(input, vid_len)
+            input_lengths = torch.full(
+                (output['sequence_logits'].shape[1],), 
+                output['sequence_logits'].shape[0], 
+                dtype=torch.long
+            )
+            loss = model.get_loss(output, input_lengths, targets, target_lengths)
+            
+            for i in range(BATCHSIZE_TRAIN):
+                wer_train += calculate_wer(output['predictions'][i], targets[i])
+            
+            running_loss_dev += loss.item()
+            del loss, input, output, vid_len, targets, target_lengths
+
         for i, sample in tqdm(enumerate(dataloader_dev)):
             input = sample[0].to('cuda', non_blocking=True)
             # vid_len = sample[1].to('cuda', non_blocking=True)
@@ -172,7 +259,7 @@ for epoch in range(0, EPOCH):
                 wer_dev += calculate_wer(output["predictions"][i], sample[-1][i])
             
             del loss, input, output, vid_len
-    
+                
     running_loss_dev = running_loss_dev / len(dataloader_dev)
     wer_dev = wer_dev / len(dataloader_dev)
     loss_histories_dev.append(running_loss_dev)
@@ -202,5 +289,3 @@ np.save(f'{MODEL_SAVE_PATH}/loss_histories.npy', loss_histories_train)
 np.save(f'{MODEL_SAVE_PATH}/wer_histories.npy', wer_histories_train)
 np.save(f'{MODEL_SAVE_PATH}/loss_histories_dev.npy', loss_histories_dev)
 np.save(f'{MODEL_SAVE_PATH}/wer_histories_dev.npy', wer_histories_dev)
-# save the model
-torch.save(model.state_dict(), f'{MODEL_SAVE_PATH}/Model_VN/model.pth')
